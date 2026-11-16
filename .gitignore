@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+config/resume.md
+config/preferences.yaml
+data/
+session*.txt
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/

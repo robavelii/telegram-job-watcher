@@ -1,0 +1,31 @@
+# Read by the scorer as plain text, so write it for a reader. Only ad_markers is parsed.
+
+target_roles:
+  - Backend engineer
+  - Full-stack engineer
+
+seniority: [middle, senior]
+
+must_have_stack:
+  - TypeScript or Python
+
+nice_to_have_stack:
+  - NestJS
+  - PostgreSQL
+  - Docker
+
+employment: [full-time, contract, part-time]
+
+# Monthly, before tax. Score lower when a post states less.
+minimum_rate: "USD 2000 / month"
+
+hard_exclusions:
+  - Gambling, betting or casino products
+  - Office or hybrid work
+  - Roles that need Ukrainian or EU residency
+
+notes: |
+  Based in Ethiopia (UTC+3). Can overlap with European working hours.
+
+# Extra phrases that mark a post as an ad; matched case-insensitively before any API call.
+ad_markers: []

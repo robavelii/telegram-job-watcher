@@ -1,0 +1,14 @@
+[project]
+name = "telegram-job-watcher"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+markers = ["live: calls the real Claude API (costs money); run with RUN_LIVE=1"]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
