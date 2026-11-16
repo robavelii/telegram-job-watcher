@@ -1,0 +1,10 @@
+target_roles: [Backend engineer, Full-stack engineer]
+seniority: [middle, senior]
+must_have_stack: [TypeScript or Python]
+nice_to_have_stack: [NestJS, PostgreSQL, Docker]
+employment: [full-time, contract]
+minimum_rate: "USD 2500 / month"
+hard_exclusions:
+  - Gambling or betting products
+  - Office or hybrid work
+ad_markers: []

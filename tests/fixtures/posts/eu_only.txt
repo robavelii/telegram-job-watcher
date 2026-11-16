@@ -1,0 +1,10 @@
+Вакансія: Senior Node.js Developer, віддалено
+
+Компанія: Nordwave (фінтех, Варшава)
+Формат: remote, але лише для кандидатів, які проживають у Польщі або іншій країні ЄС, з дозволом на роботу в ЄС.
+Контракт: B2B або UoP, 22 000–28 000 PLN netto.
+
+Стек: Node.js, TypeScript, NestJS, PostgreSQL, Kafka, AWS.
+Вимоги: 5+ років досвіду, англійська B2, польська — буде плюсом.
+
+Резюме: careers@nordwave.example

@@ -1,0 +1,13 @@
+We're hiring: Full-Stack Engineer (TypeScript) — 100% remote, worldwide
+
+Orbital Labs builds scheduling software for small clinics across three continents.
+Contract, 40h/week, USD 35–45/hour paid via Deel. Async-first team, 2h overlap with CET.
+
+You'll work on:
+• Next.js 15 dashboard and a NestJS API
+• PostgreSQL, Redis, Docker on Linux servers
+• Calendar sync with Google and Microsoft
+
+You have 4+ years of TypeScript and have shipped production SaaS.
+
+Apply: https://orbitallabs.dev/careers/fullstack — mention "telegram" in the form.

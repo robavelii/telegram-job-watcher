@@ -1,0 +1,16 @@
+🔥 Шукаємо Senior Backend Engineer (Node.js / NestJS) — повністю віддалено
+
+Компанія: Lumera Health (healthtech, продукт для клінік)
+Формат: full-time, віддалено з будь-якої країни, перетин 4 години з Києвом (UTC+2)
+Зарплата: $4000–5500 / місяць, контракт B2B
+
+Що робитимеш:
+— розробка API на NestJS + PostgreSQL (Prisma)
+— черги BullMQ, Redis
+— деплой у Docker, CI/CD у GitHub Actions
+
+Вимоги: 5+ років з Node.js/TypeScript, досвід з PostgreSQL, англійська B2+.
+Буде плюсом: досвід з медичними даними, Next.js.
+
+Відгукнутися: @lumera_hr або jobs@lumera.example (у темі листа «Backend 2026»)
+#вакансія #remote #nodejs
