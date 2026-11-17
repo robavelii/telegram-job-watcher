@@ -18,7 +18,7 @@ notifier: Bot API sendMessage to your own chat (held during quiet hours)
 ```
 
 - **Reads with your account, writes with a bot.** The user session never sends,
-  marks as read, or joins anything.
+  marks as read, or joins anything. The bot answers commands from your chat only.
 - **No inbound ports.** Only outbound connections to Telegram and the model API,
   so there is nothing to add to Caddy or the firewall.
 - Folder changes are picked up every 15 minutes without a restart.
@@ -194,6 +194,20 @@ cd /opt/job-watcher/app && git pull --ff-only && docker compose up -d --build
 3. Paste one of `tests/fixtures/posts/*.txt` into it. The alert should arrive within
    seconds. Your own posts count; there is no "incoming only" filter.
 
+## Bot commands
+
+Send these to your bot. It answers only `NOTIFY_CHAT_ID` and ignores everyone else.
+
+| Command | What it does |
+|---|---|
+| `/summary` | Last 24h: posts read and skipped, job posts, alerts, near misses (50–69), errors. `/summary 48` for another window |
+| `/top` | Best job posts of the last 24h that are open to Ethiopia, whatever their score. `/top 10` |
+| `/status` | Connected or not, chats watched, last post read, model, summary time |
+| `/scan` | Re-read the last 24h of every chat (max 72: `/scan 6`). Posts already seen are skipped, alerts arrive as usual. Takes minutes, and on the Gemini free tier it spends quota |
+| `/help` | The list above |
+
+The same summary arrives every day at `DAILY_DIGEST_AT`.
+
 ## Settings
 
 All in `.env`; see `.env.example`. The ones you will most likely change:
@@ -202,7 +216,7 @@ All in `.env`; see `.env.example`. The ones you will most likely change:
 |---|---|---|
 | `FIT_THRESHOLD` | `70` | Minimum fit score for an alert |
 | `QUIET_HOURS` | off | e.g. `23:00-07:00` in `TZ_NAME`; alerts are held and sent when it ends |
-| `DAILY_DIGEST_AT` | off | e.g. `20:00`; near misses (`NEAR_MISS_MIN`–threshold) and scoring errors |
+| `DAILY_DIGEST_AT` | off | e.g. `20:00`; the `/summary` of the last 24h, sent daily |
 | `MIN_POST_CHARS` | `200` | Shorter posts never reach the API |
 | `BACKFILL_PER_CHANNEL` | `0` | First start only: score the last N posts per channel |
 | `LLM_PROVIDER` | key that is set | `gemini` or `anthropic` |
