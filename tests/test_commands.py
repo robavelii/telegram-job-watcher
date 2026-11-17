@@ -62,7 +62,8 @@ async def test_summary_and_top(store):
     await bot.handle_update(update("/summary 48"))
     await bot.handle_update(update("/top@example_job_watcher_bot"))
     summary, top = notifier.sent[0][0], notifier.sent[1][0]
-    assert "last 48h" in summary and "Read 1 posts" in summary
+    assert "last 48h" in summary and "Read 1 · scored 1" in summary
+    assert 'href="https://t.me/a/1"' in summary
     assert "Top 1" in top and "Backend" in top
 
 

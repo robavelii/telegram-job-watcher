@@ -44,28 +44,59 @@ def _seed(store):
     store.record_result(-1, 1, "https://t.me/a/1", "A", result(title="Backend", fit_score=88))
     store.mark_alerted(-1, 1)
     store.record_result(-1, 2, "https://t.me/a/2", "A", result(title="Near", fit_score=60, eligible_from_ethiopia="unclear"))
-    store.record_result(-1, 3, "https://t.me/a/3", "A", result(title="EU only", fit_score=30, eligible_from_ethiopia="no"))
+    store.record_result(-1, 3, "https://t.me/a/3", "A",
+                        result(title="EU only", fit_score=30, eligible_from_ethiopia="no", location_rules="Poland residents"))
     store.record_result(-1, 4, "https://t.me/a/4", "A", result(title="Weak", fit_score=40))
+    store.record_result(-1, 6, "https://t.me/a/6", "A", result(is_job_posting=False, fit_score=0, summary_en="A course ad"))
     store.record_error(-1, 5, "https://t.me/a/5", "A", "Gemini API 429: quota")
-    for outcome in ["alerted", "below_threshold", "ineligible", "below_threshold", "error", "skipped:ad", "skipped:too_short", "duplicate"]:
-        store.record_outcome(outcome)
+    store.record_outcome("skipped:ad", -1, 7, "https://t.me/a/7", "A")
+    store.record_outcome("skipped:too_short", -1, 8, "https://t.me/a/8", "A")
+    store.record_outcome("skipped:too_short")  # recorded before links were stored
+    store.record_outcome("duplicate", -2, 9, "https://t.me/b/9", "B")
+    store.record_outcome("seen", -1, 1, "https://t.me/a/1", "A")  # a re-read, not listed again
 
 
-def test_summary_counts_and_sections(store):
+def _summary(store):
+    return format_summary(24, store.outcomes_since(0), store.results_since(0), 70, 50)
+
+
+def test_summary_lists_every_post_with_a_link(store):
     _seed(store)
-    text = format_summary(24, store.outcome_counts(0), store.results_since(0), 70, 50)
-    assert "Read 8 posts · skipped 2" in text and "duplicates 1" in text
-    assert "job posts 4 · alerts 1 · near misses 1 · closed to Ethiopia 1 · errors 1" in text
-    assert "🔥 <b>Alerts</b>" in text and "Backend" in text
-    assert "🟡 <b>Near misses</b> (50–69)" in text and "location unclear" in text
-    assert "Could not score" in text and "429" in text
-    assert "EU only" not in text and "Weak" not in text
+    text = _summary(store)
+    assert "Read 10 · scored 5 · job posts 4 · alerts 1 · near misses 1 · closed to Ethiopia 1" in text
+    assert "skipped 3 · duplicates 1 · errors 1" in text
+    for n in (1, 2, 3, 4, 5, 6, 7, 8):
+        assert f'href="https://t.me/a/{n}"' in text, n
+    assert 'href="https://t.me/b/9"' in text
+    assert text.count('href="https://t.me/a/1"') == 1  # the "seen" re-read is not listed twice
+    for heading in ("Alerts", "Near misses", "Low fit", "Closed to Ethiopia", "Not job posts",
+                    "Could not score", "Skipped, ads", "Skipped, too short", "Duplicates"):
+        assert heading in text, heading
+    assert "Poland residents" in text and "A course ad" in text
+    assert "1 more from before links were recorded" in text
 
 
-def test_summary_with_nothing_good_shows_best_of_the_rest(store):
-    store.record_result(-1, 4, "https://t.me/a/4", "A", result(title="Weak", fit_score=40))
-    text = format_summary(24, {"below_threshold": 1}, store.results_since(0), 70, 50)
-    assert "Nothing scored 50+" in text and "Weak" in text
+def test_summary_sections_are_in_order(store):
+    _seed(store)
+    text = _summary(store)
+    order = ["Alerts", "Near misses", "Low fit", "Closed to Ethiopia", "Not job posts", "Could not score", "Skipped", "Duplicates"]
+    positions = [text.index(h) for h in order]
+    assert positions == sorted(positions)
+
+
+def test_empty_summary(store):
+    assert "Nothing read in this window yet." in _summary(store)
+
+
+def test_long_summary_splits_under_the_limit(store):
+    for i in range(300):
+        store.record_result(-1, 100 + i, f"https://t.me/a/{100 + i}", "Some long channel name",
+                            result(title=f"Role number {i} with a long title", fit_score=30))
+    parts = split_message(_summary(store))
+    from watcher.notifier import visible_len
+
+    assert len(parts) > 1 and all(visible_len(p) <= 4000 for p in parts)
+    assert sum(p.count("href=") for p in parts) == 300  # no line lost or cut
 
 
 def test_top_skips_ineligible(store):
