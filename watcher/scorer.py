@@ -107,7 +107,9 @@ that mentions Python or Node is still a DevOps or data role.
 - fit_reasons: two or three short reasons the job fits, tied to the resume.
 - gaps: what the candidate lacks or must check, including location doubts.
 - how_to_apply: contacts, links, handles or emails from the post, copied exactly, plus any \
-instruction such as a code word. Empty when the post gives none.
+instruction such as a code word. Links hidden behind words or buttons are listed at the end of \
+the post under "Links in the post"; prefer the apply link from there over "use the button \
+below". Empty when the post gives none.
 - apply_urgency: "high" when the post says urgent, ASAP, "терміново" or "срочно", or names \
 a close deadline, or fit_score is 85 or more. Otherwise "normal".
 
