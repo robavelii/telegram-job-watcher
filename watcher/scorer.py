@@ -1,4 +1,7 @@
-"""One Claude call per post: classify, translate and score against the resume.
+"""One model call per post: classify, translate and score against the resume.
+
+The model provider is pluggable (see backends.py); this module owns the prompt,
+the schema and what counts as a valid answer.
 
 The post is untrusted input. The model gets no tools, the post is wrapped in
 <post> tags with any closing tag inside it defused, and the system prompt tells
@@ -9,8 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
-
-import anthropic
+from typing import Protocol
 
 log = logging.getLogger(__name__)
 
@@ -119,14 +121,13 @@ def defuse(text: str) -> str:
     return text.replace("</post>", "</ post>").replace("<post>", "< post>")
 
 
-def build_system(resume: str, preferences: str) -> list[dict]:
-    body = (
+def build_system(resume: str, preferences: str) -> str:
+    """Identical for every post, so providers can cache it; only the user turn changes."""
+    return (
         f"{INSTRUCTIONS}\n"
         f"<resume>\n{resume}\n</resume>\n\n"
         f"<preferences>\n{preferences}\n</preferences>"
     )
-    # Identical for every post, so it is cached; only the user turn changes.
-    return [{"type": "text", "text": body, "cache_control": {"type": "ephemeral"}}]
 
 
 def build_user_message(post_text: str, channel_title: str) -> str:
@@ -163,61 +164,25 @@ def clean_result(data: dict) -> dict:
     return result
 
 
+class Backend(Protocol):
+    name: str
+
+    async def complete(self, system: str, user: str) -> str:
+        """Return the model's JSON text, or raise ScoreError."""
+        ...
+
+
 class Scorer:
-    def __init__(
-        self,
-        client: anthropic.AsyncAnthropic,
-        model: str,
-        resume: str,
-        preferences: str,
-        effort: str = "medium",
-        max_tokens: int = 8000,
-    ):
-        self.client = client
-        self.model = model
-        self.effort = effort
-        self.max_tokens = max_tokens
+    def __init__(self, backend: Backend, resume: str, preferences: str):
+        self.backend = backend
         self.system = build_system(resume, preferences)
 
-    def request(self, post_text: str, channel_title: str) -> dict:
-        return {
-            "model": self.model,
-            # Thinking is on by default on current Haiku and counts toward max_tokens,
-            # so leave room well above the size of the JSON answer.
-            "max_tokens": self.max_tokens,
-            "system": self.system,
-            "messages": [{"role": "user", "content": build_user_message(post_text, channel_title)}],
-            "output_config": {
-                "effort": self.effort,
-                "format": {"type": "json_schema", "schema": RESULT_SCHEMA},
-            },
-        }
-
     async def score(self, post_text: str, channel_title: str) -> dict:
-        try:
-            response = await self.client.messages.create(**self.request(post_text, channel_title))
-        except anthropic.APIStatusError as exc:
-            raise ScoreError(f"Claude API {exc.status_code}: {exc.message}") from exc
-        except anthropic.APIConnectionError as exc:
-            raise ScoreError(f"Claude API unreachable: {exc}") from exc
-
-        usage = response.usage
-        log.debug(
-            "claude usage: in=%s cache_read=%s cache_write=%s out=%s",
-            usage.input_tokens,
-            getattr(usage, "cache_read_input_tokens", None),
-            getattr(usage, "cache_creation_input_tokens", None),
-            usage.output_tokens,
-        )
-        if response.stop_reason == "refusal":
-            raise ScoreError("Claude declined to assess this post")
-        if response.stop_reason == "max_tokens":
-            raise ScoreError("Claude hit max_tokens before finishing")
-        text = next((b.text for b in response.content if b.type == "text"), None)
-        if not text:
-            raise ScoreError(f"no text block in response (stop_reason={response.stop_reason})")
+        text = await self.backend.complete(self.system, build_user_message(post_text, channel_title))
         try:
             data = json.loads(text)
         except json.JSONDecodeError as exc:
-            raise ScoreError(f"response was not JSON: {exc}") from exc
+            raise ScoreError(f"{self.backend.name}: response was not JSON: {exc}") from exc
+        if not isinstance(data, dict):
+            raise ScoreError(f"{self.backend.name}: expected a JSON object")
         return clean_result(data)
