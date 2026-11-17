@@ -33,8 +33,8 @@ def configure_logging() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=sys.stdout,
     )
-    # httpx logs every request URL at INFO, and Bot API URLs contain the bot token.
-    for noisy in ("httpx", "httpcore", "telethon", "google_genai"):
+    # httpx and httpx2 log every request URL at INFO, and Bot API URLs contain the bot token.
+    for noisy in ("httpx", "httpx2", "httpcore", "telethon", "google_genai"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
