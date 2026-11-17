@@ -44,6 +44,42 @@ def find_folder(filters, name: str):
     raise FolderNotFound(f"no folder named {name!r}; folders on this account: {titles}")
 
 
+MAX_LINKS = 10
+
+
+def extract_links(message) -> list[tuple[str, str]]:
+    """(label, url) for links the plain text hides: text links ("Apply" pointing somewhere)
+    and URL buttons under the post. Works with old and new Telegram API layers."""
+    links: list[tuple[str, str]] = []
+    try:
+        for entity, label in message.get_entities_text() or []:
+            url = getattr(entity, "url", None)  # MessageEntityTextUrl only
+            if url:
+                links.append((label.strip(), url))
+    except Exception:
+        pass
+    markup = getattr(message, "reply_markup", None)
+    for row in getattr(markup, "rows", None) or []:
+        for button in getattr(row, "buttons", None) or []:
+            url = getattr(button, "url", None) or getattr(getattr(button, "type", None), "url", None)
+            if url:
+                links.append(((getattr(button, "text", "") or "").strip(), url))
+    seen, unique = set(), []
+    for label, url in links:
+        if url not in seen:
+            seen.add(url)
+            unique.append((label or "link", url))
+    return unique[:MAX_LINKS]
+
+
+def text_with_links(message) -> str:
+    text = message.message or ""
+    hidden = [(label, url) for label, url in extract_links(message) if url not in text]
+    if not hidden:
+        return text
+    return text + "\n\nLinks in the post:\n" + "\n".join(f"- {label}: {url}" for label, url in hidden)
+
+
 class Listener:
     def __init__(self, settings, pipeline: Pipeline, store):
         self.settings = settings
@@ -125,9 +161,9 @@ class Listener:
     # --- messages -------------------------------------------------------------
 
     def to_post(self, message, chat_id: int) -> Post | None:
-        text = message.message or ""  # text, or the caption of a media post
-        if not text.strip():
+        if not (message.message or "").strip():
             return None  # pure media, or an album item without the caption
+        text = text_with_links(message)  # text or caption, plus links hidden behind words or buttons
         channel = self.channels.get(chat_id) or Channel(title=str(chat_id), username=None)
         return Post(
             chat_id=chat_id,

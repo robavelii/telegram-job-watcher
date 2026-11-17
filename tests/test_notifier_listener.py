@@ -104,3 +104,46 @@ def test_to_post_skips_media_without_caption():
     captioned = SimpleNamespace(id=6, message="Vacancy text", grouped_id=123)
     post = listener.to_post(captioned, -1001)
     assert post.username == "jobs" and post.channel_title == "Jobs"
+
+
+def test_hidden_links_and_buttons_are_added_to_the_text():
+    from telethon.tl.types import (
+        InlineButtonTypeCallback, InlineButtonTypeUrl, KeyboardInlineButton, KeyboardInlineButtonRow,
+        MessageEntityBold, MessageEntityTextUrl, ReplyInlineMarkup,
+    )
+
+    from watcher.listener import text_with_links
+
+    entities = [(MessageEntityTextUrl(0, 5, "https://jobs.example/apply"), "Apply"),
+                (MessageEntityBold(6, 3), "now"),
+                (MessageEntityTextUrl(10, 4, "https://t.me/visible"), "here")]
+    markup = ReplyInlineMarkup(rows=[KeyboardInlineButtonRow(buttons=[
+        KeyboardInlineButton(text="Apply on site", type=InlineButtonTypeUrl(url="https://jobs.example/form")),
+        KeyboardInlineButton(text="Like", type=InlineButtonTypeCallback(data=b"x")),
+    ])])
+    message = SimpleNamespace(
+        message="Apply now here https://t.me/visible",
+        get_entities_text=lambda: entities,
+        reply_markup=markup,
+    )
+    text = text_with_links(message)
+    assert "- Apply: https://jobs.example/apply" in text
+    assert "- Apply on site: https://jobs.example/form" in text
+    assert text.count("https://t.me/visible") == 1  # already in the text, not repeated
+    assert "Like" not in text
+
+
+def test_old_layer_url_buttons_still_work():
+    from watcher.listener import extract_links
+
+    button = SimpleNamespace(text="Apply", url="https://old.example")
+    message = SimpleNamespace(message="x", get_entities_text=lambda: [],
+                              reply_markup=SimpleNamespace(rows=[SimpleNamespace(buttons=[button])]))
+    assert extract_links(message) == [("Apply", "https://old.example")]
+
+
+def test_post_without_links_is_unchanged():
+    from watcher.listener import text_with_links
+
+    message = SimpleNamespace(message="plain", get_entities_text=lambda: [], reply_markup=None)
+    assert text_with_links(message) == "plain"
