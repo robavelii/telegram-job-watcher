@@ -45,7 +45,18 @@ fi
 
 ask BOT_TOKEN         "Bot token (@BotFather)"            '^[0-9]+:[A-Za-z0-9_-]{30,}$' 1
 ask NOTIFY_CHAT_ID    "Your Telegram user id"             '^-?[0-9]+$' 0
-ask ANTHROPIC_API_KEY "Anthropic API key"                 '^sk-ant-[A-Za-z0-9_-]{20,}$' 1
+provider=""
+while [[ -z $provider ]]; do
+  read -rp "Model provider, gemini or anthropic (Enter = gemini): " provider
+  provider=${provider:-gemini}
+  [[ $provider == gemini || $provider == anthropic ]] || { echo "  type gemini or anthropic"; provider=""; }
+done
+add LLM_PROVIDER "$provider"
+if [[ $provider == gemini ]]; then
+  ask GEMINI_API_KEY  "Gemini API key (aistudio.google.com/apikey)" '^[A-Za-z0-9_.-]{30,}$' 1
+else
+  ask ANTHROPIC_API_KEY "Anthropic API key"                 '^sk-ant-[A-Za-z0-9_-]{20,}$' 1
+fi
 
 if [[ -z $payload ]]; then echo "Nothing to change."; exit 0; fi
 
