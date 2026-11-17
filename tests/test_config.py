@@ -54,3 +54,12 @@ def test_no_key_and_bad_provider(env):
     env.setenv("LLM_PROVIDER", "openai")
     with pytest.raises(ConfigError, match="LLM_PROVIDER"):
         resolve_provider()
+
+
+def test_bad_preferences_yaml_is_a_config_error(tmp_path):
+    from watcher.config import load_profile
+
+    (tmp_path / "resume.md").write_text("resume")
+    (tmp_path / "preferences.yaml").write_text("target_roles:\n  - AI engineer: building\n    RAG\n")
+    with pytest.raises(ConfigError, match="not valid YAML"):
+        load_profile(tmp_path)

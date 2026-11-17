@@ -148,7 +148,10 @@ def load_profile(config_dir: Path) -> Profile:
             raise ConfigError(f"{path} is missing (copy the .example file next to it and fill it in)")
     resume = resume_path.read_text(encoding="utf-8").strip()
     prefs_text = prefs_path.read_text(encoding="utf-8").strip()
-    prefs = yaml.safe_load(prefs_text) or {}
+    try:
+        prefs = yaml.safe_load(prefs_text) or {}
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"{prefs_path} is not valid YAML: {exc}") from exc
     if not isinstance(prefs, dict):
         raise ConfigError(f"{prefs_path} must be a YAML mapping")
     markers = [str(m) for m in prefs.get("ad_markers", []) or []]
