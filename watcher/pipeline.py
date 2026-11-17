@@ -54,7 +54,7 @@ class Pipeline:
     async def handle(self, post: Post) -> str:
         """Returns the outcome, for logs, summaries and tests."""
         outcome = await self._handle(post)
-        self.store.record_outcome(outcome)
+        self.store.record_outcome(outcome, post.chat_id, post.msg_id, post_link(post), post.channel_title)
         return outcome
 
     async def _handle(self, post: Post) -> str:

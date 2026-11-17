@@ -60,7 +60,11 @@ CREATE TABLE IF NOT EXISTS outbox (
 -- One row per post the pipeline looked at, for summaries (skips included).
 CREATE TABLE IF NOT EXISTS outcomes (
     ts       REAL NOT NULL,
-    outcome  TEXT NOT NULL
+    outcome  TEXT NOT NULL,
+    chat_id  INTEGER,
+    msg_id   INTEGER,
+    link     TEXT NOT NULL DEFAULT '',
+    channel  TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS outcomes_ts ON outcomes (ts);
 
@@ -105,6 +109,20 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Add columns that later versions introduced to tables an older version created."""
+        have = {r["name"] for r in self.db.execute("PRAGMA table_info(outcomes)")}
+        for column, ddl in (
+            ("chat_id", "INTEGER"),
+            ("msg_id", "INTEGER"),
+            ("link", "TEXT NOT NULL DEFAULT ''"),
+            ("channel", "TEXT NOT NULL DEFAULT ''"),
+        ):
+            if column not in have:
+                self.db.execute(f"ALTER TABLE outcomes ADD COLUMN {column} {ddl}")
+        self.db.commit()
 
     # --- dedupe -----------------------------------------------------------------
 
@@ -183,10 +201,15 @@ class Store:
 
     # --- summaries --------------------------------------------------------------
 
-    def record_outcome(self, outcome: str) -> None:
+    def record_outcome(
+        self, outcome: str, chat_id: int | None = None, msg_id: int | None = None, link: str = "", channel: str = ""
+    ) -> None:
         now = self._clock()
         with self.db:
-            self.db.execute("INSERT INTO outcomes (ts, outcome) VALUES (?, ?)", (now, outcome))
+            self.db.execute(
+                "INSERT INTO outcomes (ts, outcome, chat_id, msg_id, link, channel) VALUES (?, ?, ?, ?, ?, ?)",
+                (now, outcome, chat_id, msg_id, link, channel),
+            )
             self.db.execute("DELETE FROM outcomes WHERE ts < ?", (now - 30 * 24 * 3600,))
 
     def outcome_counts(self, since: float) -> dict[str, int]:
@@ -194,6 +217,9 @@ class Store:
             "SELECT outcome, COUNT(*) AS n FROM outcomes WHERE ts >= ? GROUP BY outcome", (since,)
         ).fetchall()
         return {r["outcome"]: r["n"] for r in rows}
+
+    def outcomes_since(self, since: float) -> list[sqlite3.Row]:
+        return self.db.execute("SELECT * FROM outcomes WHERE ts >= ? ORDER BY ts", (since,)).fetchall()
 
     def results_since(self, since: float) -> list[sqlite3.Row]:
         return self.db.execute(
