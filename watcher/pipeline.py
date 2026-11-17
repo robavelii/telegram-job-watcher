@@ -52,7 +52,12 @@ class Pipeline:
         self._slots = asyncio.Semaphore(max_concurrent)
 
     async def handle(self, post: Post) -> str:
-        """Returns the outcome, for logs and tests."""
+        """Returns the outcome, for logs, summaries and tests."""
+        outcome = await self._handle(post)
+        self.store.record_outcome(outcome)
+        return outcome
+
+    async def _handle(self, post: Post) -> str:
         reason = reject_reason(post.text, self.min_post_chars, self.markers)
         if reason:
             log.debug("skip %s/%s: %s", post.chat_id, post.msg_id, reason)

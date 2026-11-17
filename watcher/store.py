@@ -57,6 +57,13 @@ CREATE TABLE IF NOT EXISTS outbox (
     sent_at     REAL
 );
 
+-- One row per post the pipeline looked at, for summaries (skips included).
+CREATE TABLE IF NOT EXISTS outcomes (
+    ts       REAL NOT NULL,
+    outcome  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS outcomes_ts ON outcomes (ts);
+
 CREATE TABLE IF NOT EXISTS meta (
     key    TEXT PRIMARY KEY,
     value  TEXT NOT NULL
@@ -174,25 +181,28 @@ class Store:
                 (self._clock(), chat_id, msg_id),
             )
 
-    def pending_digest(self, low: int, high: int) -> list[sqlite3.Row]:
-        """Near misses (low <= score < high, not ruled out on location) and scoring errors
-        that have not been in a digest yet."""
-        return self.db.execute(
-            """SELECT * FROM results
-               WHERE digested_at IS NULL AND alerted_at IS NULL AND (
-                   (status = 'scored' AND is_job = 1 AND eligible != 'no' AND fit_score >= ? AND fit_score < ?)
-                   OR status = 'error')
-               ORDER BY fit_score DESC, created_at""",
-            (low, high),
-        ).fetchall()
+    # --- summaries --------------------------------------------------------------
 
-    def mark_digested(self, rows: list[sqlite3.Row]) -> None:
+    def record_outcome(self, outcome: str) -> None:
         now = self._clock()
         with self.db:
-            self.db.executemany(
-                "UPDATE results SET digested_at = ? WHERE chat_id = ? AND msg_id = ?",
-                [(now, r["chat_id"], r["msg_id"]) for r in rows],
-            )
+            self.db.execute("INSERT INTO outcomes (ts, outcome) VALUES (?, ?)", (now, outcome))
+            self.db.execute("DELETE FROM outcomes WHERE ts < ?", (now - 30 * 24 * 3600,))
+
+    def outcome_counts(self, since: float) -> dict[str, int]:
+        rows = self.db.execute(
+            "SELECT outcome, COUNT(*) AS n FROM outcomes WHERE ts >= ? GROUP BY outcome", (since,)
+        ).fetchall()
+        return {r["outcome"]: r["n"] for r in rows}
+
+    def results_since(self, since: float) -> list[sqlite3.Row]:
+        return self.db.execute(
+            "SELECT * FROM results WHERE created_at >= ? ORDER BY fit_score DESC, created_at", (since,)
+        ).fetchall()
+
+    def last_outcome_at(self) -> float | None:
+        row = self.db.execute("SELECT MAX(ts) AS t FROM outcomes").fetchone()
+        return row["t"] if row else None
 
     # --- outbox (quiet hours) ---------------------------------------------------
 
