@@ -167,18 +167,61 @@ def format_alert(result: dict, link: str, channel: str) -> str:
     return "\n".join(lines)
 
 
-def format_digest(rows: list, threshold: int) -> str:
-    lines = [f"📋 <b>Daily digest</b>: {len(rows)} near misses and errors (below {threshold})", ""]
-    for row in rows:
-        link = row["link"]
-        if row["status"] == "error":
-            label = f"⚠️ could not score: {esc(row['error'])}"
-        else:
-            data = json.loads(row["result_json"])
-            label = f"<b>{row['fit_score']}</b> · {esc(data.get('title') or 'Untitled')}"
-            if data.get("company"):
-                label += f" · {esc(data['company'])}"
-            if row["eligible"] == "unclear":
-                label += " · location unclear"
-        lines.append(f'• {label} — <a href="{attr(link)}">{esc(row["channel"])}</a>' if link else f"• {label}")
+def _job_line(row) -> str:
+    data = json.loads(row["result_json"]) if row["result_json"] else {}
+    label = f"<b>{row['fit_score']}</b> · {esc(data.get('title') or 'Untitled')}"
+    if data.get("company"):
+        label += f" · {esc(data['company'])}"
+    if row["eligible"] == "unclear":
+        label += " · location unclear"
+    link = row["link"]
+    source = f'<a href="{attr(link)}">{esc(row["channel"])}</a>' if link else esc(row["channel"])
+    return f"• {label} — {source}"
+
+
+def format_summary(
+    hours: int,
+    counts: dict[str, int],
+    rows: list,
+    threshold: int,
+    near_min: int,
+    title: str = "Summary",
+    limit: int = 10,
+) -> str:
+    """counts: pipeline outcomes in the window; rows: results created in the window."""
+    read = sum(counts.values())
+    skipped = sum(n for k, n in counts.items() if k.startswith("skipped:"))
+    duplicates = counts.get("duplicate", 0) + counts.get("seen", 0)
+    scored = [r for r in rows if r["status"] == "scored"]
+    jobs = [r for r in scored if r["is_job"]]
+    alerts = [r for r in jobs if r["alerted_at"] is not None]
+    near = [r for r in jobs if r["alerted_at"] is None and r["eligible"] != "no" and near_min <= r["fit_score"] < threshold]
+    ruled_out = [r for r in jobs if r["eligible"] == "no"]
+    errors = [r for r in rows if r["status"] == "error"]
+
+    lines = [
+        f"📊 <b>{esc(title)}</b>, last {hours}h",
+        f"Read {read} posts · skipped {skipped} (short/ads/media) · duplicates {duplicates}",
+        f"Scored {len(scored)} · job posts {len(jobs)} · alerts {len(alerts)} · near misses {len(near)}"
+        f" · closed to Ethiopia {len(ruled_out)} · errors {len(errors)}",
+    ]
+    if alerts:
+        lines += ["", f"🔥 <b>Alerts</b> ({threshold}+)"] + [_job_line(r) for r in alerts[:limit]]
+    if near:
+        lines += ["", f"🟡 <b>Near misses</b> ({near_min}–{threshold - 1})"] + [_job_line(r) for r in near[:limit]]
+    if not alerts and not near:
+        best = [r for r in jobs if r["eligible"] != "no"][:3]
+        lines += ["", f"Nothing scored {near_min}+ in this window."]
+        if best:
+            lines += ["Best of the rest:"] + [_job_line(r) for r in best]
+    if errors:
+        lines += ["", f"⚠️ <b>Could not score</b> ({len(errors)})"]
+        lines += [f"• {esc(r['error'])[:120]}" for r in errors[:5]]
     return "\n".join(lines)
+
+
+def format_top(rows: list, hours: int, n: int) -> str:
+    jobs = [r for r in rows if r["status"] == "scored" and r["is_job"] and r["eligible"] != "no"][:n]
+    if not jobs:
+        return f"No job posts open to Ethiopia in the last {hours}h yet."
+    return "\n".join([f"🏆 <b>Top {len(jobs)}</b>, last {hours}h"] + [_job_line(r) for r in jobs])
