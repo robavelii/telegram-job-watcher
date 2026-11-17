@@ -18,7 +18,7 @@ from .notifier import BotNotifier, esc, format_summary, format_top
 log = logging.getLogger(__name__)
 
 COMMANDS = [
-    ("summary", "Summary of the last 24h, or /summary 48"),
+    ("summary", "Every post of the last 24h with links, or /summary 48"),
     ("top", "Best job posts of the last 24h, or /top 10"),
     ("status", "Is the watcher running, and what is it watching"),
     ("scan", "Re-read the last 24h of every channel, or /scan 6"),
@@ -62,7 +62,7 @@ class Commands:
         since = self.clock() - hours * 3600
         return format_summary(
             hours,
-            self.store.outcome_counts(since),
+            self.store.outcomes_since(since),
             self.store.results_since(since),
             self.settings.fit_threshold,
             self.settings.near_miss_min,

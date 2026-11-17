@@ -9,6 +9,7 @@ import asyncio
 import html
 import json
 import logging
+import re
 from collections.abc import Callable
 from datetime import datetime, time
 
@@ -16,7 +17,6 @@ import httpx
 
 log = logging.getLogger(__name__)
 
-TELEGRAM_LIMIT = 4096
 
 
 def esc(value: object) -> str:
@@ -27,26 +27,37 @@ def attr(value: str) -> str:
     return html.escape(value, quote=True)
 
 
-def split_message(text: str, limit: int = TELEGRAM_LIMIT) -> list[str]:
-    """Split on line breaks so HTML tags (always within one line here) stay balanced."""
-    if len(text) <= limit:
+_TAG = re.compile(r"<[^>]+>")
+
+
+def visible_len(text: str) -> int:
+    """Length Telegram counts against its limit: the text after HTML entities are parsed."""
+    return len(html.unescape(_TAG.sub("", text)))
+
+
+def split_message(text: str, limit: int = 4000) -> list[str]:
+    """Split on line breaks (HTML tags here never span lines) so each part stays under
+    Telegram's 4096-character limit, measured on visible text."""
+    if visible_len(text) <= limit:
         return [text]
-    parts, current = [], ""
+    parts: list[str] = []
+    current, size = [], 0
     for line in text.split("\n"):
-        while len(line) > limit:  # a single giant line: hard cut, tags be damned
+        n = visible_len(line) + 1
+        if n > limit:  # one giant line: hard cut, tags be damned
             if current:
-                parts.append(current)
-                current = ""
-            parts.append(line[:limit])
-            line = line[limit:]
-        candidate = f"{current}\n{line}" if current else line
-        if len(candidate) > limit:
-            parts.append(current)
-            current = line
-        else:
-            current = candidate
+                parts.append("\n".join(current))
+                current, size = [], 0
+            plain = html.unescape(_TAG.sub("", line))
+            parts += [esc(plain[i : i + limit]) for i in range(0, len(plain), limit)]
+            continue
+        if size + n > limit and current:
+            parts.append("\n".join(current))
+            current, size = [], 0
+        current.append(line)
+        size += n
     if current:
-        parts.append(current)
+        parts.append("\n".join(current))
     return parts
 
 
@@ -167,56 +178,112 @@ def format_alert(result: dict, link: str, channel: str) -> str:
     return "\n".join(lines)
 
 
+def _source(link: str, channel: str, msg_id=None) -> str:
+    label = esc(channel or "post") + (f" #{msg_id}" if msg_id else "")
+    return f'<a href="{attr(link)}">{label}</a>' if link else label
+
+
+def _data(row) -> dict:
+    try:
+        return json.loads(row["result_json"]) if row["result_json"] else {}
+    except (TypeError, ValueError):
+        return {}
+
+
 def _job_line(row) -> str:
-    data = json.loads(row["result_json"]) if row["result_json"] else {}
+    data = _data(row)
     label = f"<b>{row['fit_score']}</b> · {esc(data.get('title') or 'Untitled')}"
     if data.get("company"):
         label += f" · {esc(data['company'])}"
     if row["eligible"] == "unclear":
         label += " · location unclear"
-    link = row["link"]
-    source = f'<a href="{attr(link)}">{esc(row["channel"])}</a>' if link else esc(row["channel"])
-    return f"• {label} — {source}"
+    return f"• {label} — {_source(row['link'], row['channel'])}"
+
+
+def _closed_line(row) -> str:
+    data = _data(row)
+    where = (data.get("location_rules") or "").strip()
+    line = f"• {esc(data.get('title') or 'Untitled')} — {_source(row['link'], row['channel'])}"
+    return line + (f" · <i>{esc(where[:70])}</i>" if where else "")
+
+
+def _not_job_line(row) -> str:
+    gist = (_data(row).get("summary_en") or "").strip()
+    return f"• {_source(row['link'], row['channel'])}" + (f": {esc(gist[:90])}" if gist else "")
+
+
+def _link_list(rows: list, per_line: int = 8) -> list[str]:
+    """Many links, a few per line, so the list stays short."""
+    sources = [_source(r["link"], r["channel"], r["msg_id"]) for r in rows]
+    return ["• " + " · ".join(sources[i : i + per_line]) for i in range(0, len(sources), per_line)]
+
+
+SKIP_LABELS = {
+    "skipped:too_short": "too short",
+    "skipped:ad": "ads",
+    "skipped:no_text": "no text",
+}
 
 
 def format_summary(
     hours: int,
-    counts: dict[str, int],
-    rows: list,
+    outcomes: list,
+    results: list,
     threshold: int,
     near_min: int,
     title: str = "Summary",
-    limit: int = 10,
 ) -> str:
-    """counts: pipeline outcomes in the window; rows: results created in the window."""
-    read = sum(counts.values())
-    skipped = sum(n for k, n in counts.items() if k.startswith("skipped:"))
-    duplicates = counts.get("duplicate", 0) + counts.get("seen", 0)
-    scored = [r for r in rows if r["status"] == "scored"]
+    """Every post read in the window, grouped, each linked to the original message.
+
+    outcomes: rows from Store.outcomes_since (every post the pipeline looked at);
+    results: rows from Store.results_since (posts that reached the model)."""
+    scored = [r for r in results if r["status"] == "scored"]
+    errors = [r for r in results if r["status"] == "error"]
     jobs = [r for r in scored if r["is_job"]]
-    alerts = [r for r in jobs if r["alerted_at"] is not None]
-    near = [r for r in jobs if r["alerted_at"] is None and r["eligible"] != "no" and near_min <= r["fit_score"] < threshold]
-    ruled_out = [r for r in jobs if r["eligible"] == "no"]
-    errors = [r for r in rows if r["status"] == "error"]
+    not_jobs = [r for r in scored if not r["is_job"]]
+    closed = [r for r in jobs if r["eligible"] == "no"]
+    open_jobs = [r for r in jobs if r["eligible"] != "no"]
+    alerts = [r for r in open_jobs if r["fit_score"] >= threshold]
+    near = [r for r in open_jobs if near_min <= r["fit_score"] < threshold]
+    below = [r for r in open_jobs if r["fit_score"] < near_min]
+
+    skipped = [o for o in outcomes if o["outcome"].startswith("skipped:")]
+    duplicates = [o for o in outcomes if o["outcome"] == "duplicate"]
+    read = len(results) + len(skipped) + len(duplicates)
 
     lines = [
-        f"📊 <b>{esc(title)}</b>, last {hours}h",
-        f"Read {read} posts · skipped {skipped} (short/ads/media) · duplicates {duplicates}",
-        f"Scored {len(scored)} · job posts {len(jobs)} · alerts {len(alerts)} · near misses {len(near)}"
-        f" · closed to Ethiopia {len(ruled_out)} · errors {len(errors)}",
+        f"📊 <b>{esc(title)}</b>, last {hours}h — every post read, each linked",
+        f"Read {read} · scored {len(scored)} · job posts {len(jobs)} · alerts {len(alerts)} · "
+        f"near misses {len(near)} · closed to Ethiopia {len(closed)} · skipped {len(skipped)} · "
+        f"duplicates {len(duplicates)} · errors {len(errors)}",
     ]
-    if alerts:
-        lines += ["", f"🔥 <b>Alerts</b> ({threshold}+)"] + [_job_line(r) for r in alerts[:limit]]
-    if near:
-        lines += ["", f"🟡 <b>Near misses</b> ({near_min}–{threshold - 1})"] + [_job_line(r) for r in near[:limit]]
-    if not alerts and not near:
-        best = [r for r in jobs if r["eligible"] != "no"][:3]
-        lines += ["", f"Nothing scored {near_min}+ in this window."]
-        if best:
-            lines += ["Best of the rest:"] + [_job_line(r) for r in best]
-    if errors:
-        lines += ["", f"⚠️ <b>Could not score</b> ({len(errors)})"]
-        lines += [f"• {esc(r['error'])[:120]}" for r in errors[:5]]
+
+    def section(heading: str, rows: list, render) -> None:
+        if rows:
+            lines.extend(["", f"{heading} ({len(rows)})"] + [render(r) for r in rows])
+
+    section(f"🔥 <b>Alerts</b>, {threshold}+", alerts, _job_line)
+    section(f"🟡 <b>Near misses</b>, {near_min}–{threshold - 1}", near, _job_line)
+    section(f"📉 <b>Low fit</b>, under {near_min}", below, _job_line)
+    section("🚫 <b>Closed to Ethiopia</b>", closed, _closed_line)
+    section("📰 <b>Not job posts</b>", not_jobs, _not_job_line)
+    section("⚠️ <b>Could not score</b>", errors,
+            lambda r: f"• {_source(r['link'], r['channel'])}: {esc((r['error'] or '')[:90])}")
+
+    by_reason: dict[str, list] = {}
+    for o in skipped:
+        by_reason.setdefault(o["outcome"], []).append(o)
+    for reason, rows in by_reason.items():
+        linked = [r for r in rows if r["link"]]
+        label = SKIP_LABELS.get(reason, reason.removeprefix("skipped:"))
+        lines += ["", f"⏭ <b>Skipped, {esc(label)}</b> ({len(rows)})"] + _link_list(linked)
+        if len(linked) < len(rows):
+            lines.append(f"• {len(rows) - len(linked)} more from before links were recorded")
+    if duplicates:
+        linked = [r for r in duplicates if r["link"]]
+        lines += ["", f"🔁 <b>Duplicates of posts above</b> ({len(duplicates)})"] + _link_list(linked)
+    if read == 0:
+        lines += ["", "Nothing read in this window yet."]
     return "\n".join(lines)
 
 
