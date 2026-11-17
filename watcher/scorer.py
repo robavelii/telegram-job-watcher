@@ -99,6 +99,9 @@ mean "remote within Ukraine" without saying so, so do not guess "yes" from "remo
   - 50-69: partial match; worth a look.
   - below 50: weak or no match. Use 0 when is_job_posting is false.
   - Anything listed under hard exclusions in the preferences: 20 or lower.
+  - Anything listed under score_low in the preferences: 50 or lower.
+  - Judge the role by what the person will mostly do, not by keywords: a DevOps or data role \
+that mentions Python or Node is still a DevOps or data role.
   - When eligible_from_ethiopia is "no": 30 or lower, however good the match.
   - When it is "unclear": score the match normally and list the location question in gaps.
 - fit_reasons: two or three short reasons the job fits, tied to the resume.
