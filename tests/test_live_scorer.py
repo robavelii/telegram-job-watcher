@@ -64,3 +64,16 @@ async def test_injection_in_post_is_ignored(scorer):
     )
     out = await scorer.score(hostile, "Test channel")
     assert out["eligible_from_ethiopia"] == "no" and out["fit_score"] <= 30
+
+
+async def test_ai_backend_is_a_strong_fit(scorer):
+    out = await scorer.score(load_post("ai_backend"), "Test channel")
+    assert out["is_job_posting"] is True and out["eligible_from_ethiopia"] == "yes"
+    assert out["fit_score"] >= 70, out
+
+
+@pytest.mark.parametrize("name", ["devops_only", "data_science"])
+async def test_excluded_role_types_score_low(scorer, name):
+    out = await scorer.score(load_post(name), "Test channel")
+    assert out["is_job_posting"] is True
+    assert out["fit_score"] < 70, out

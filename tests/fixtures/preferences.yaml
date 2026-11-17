@@ -7,4 +7,6 @@ minimum_rate: "USD 2500 / month"
 hard_exclusions:
   - Gambling or betting products
   - Office or hybrid work
+  - Data science, ML research or model training roles
+  - DevOps-only, SRE or infrastructure-only roles
 ad_markers: []

@@ -1,0 +1,14 @@
+Вакансия: Senior DevOps Engineer, удалённо (весь мир)
+
+Компания: CloudForge — хостинг-платформа для SaaS.
+Формат: full-time, удалённо из любой страны, оплата $4500–5500 в USD.
+
+Задачи:
+— поддержка и развитие Kubernetes-кластеров (EKS), Terraform, Helm
+— CI/CD на GitHub Actions и ArgoCD
+— мониторинг: Prometheus, Grafana, Loki; дежурства on-call раз в месяц
+— автоматизация на Bash и немного Python
+
+Требования: 4+ года в DevOps/SRE, AWS, Kubernetes, Terraform, английский B2.
+
+Отклик: @cloudforge_hr

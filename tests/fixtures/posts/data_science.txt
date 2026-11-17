@@ -1,0 +1,13 @@
+Hiring: Senior Data Scientist (NLP) — remote, worldwide
+
+Northstar Analytics builds demand-forecasting models for retail chains.
+Full-time, USD 5000–6500/month, async team, any time zone.
+
+You will:
+• train and evaluate forecasting and NLP models (PyTorch, scikit-learn)
+• run experiments in Jupyter, design A/B tests, present findings to clients
+• fine-tune transformer models on customer data
+
+You have 4+ years in data science, strong statistics, Python, SQL, MLflow.
+
+Apply: careers@northstar.example (subject "DS Telegram")
