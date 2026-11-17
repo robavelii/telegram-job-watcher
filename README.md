@@ -1,7 +1,7 @@
 # telegram-job-watcher
 
 Watches every channel in one Telegram folder (`remote-jobs`), decides whether each new
-post is a job, translates it, scores it against your resume with Claude, and pings you
+post is a job, translates it, scores it against your resume with Gemini or Claude, and pings you
 through a bot when it fits.
 
 ```
@@ -11,7 +11,7 @@ Telegram (your user account, MTProto, read-only)
 listener ── pre-filter (length, ad markers) ── dedupe (SQLite, exact + near-duplicate)
   │
   ▼
-scorer: one Claude Haiku call → strict JSON (is job? translation, eligibility, fit 0-100)
+scorer: one Gemini or Claude call → strict JSON (is job? translation, eligibility, fit 0-100)
   │ job, fit ≥ FIT_THRESHOLD, eligible from Ethiopia ≠ "no"
   ▼
 notifier: Bot API sendMessage to your own chat (held during quiet hours)
@@ -19,7 +19,7 @@ notifier: Bot API sendMessage to your own chat (held during quiet hours)
 
 - **Reads with your account, writes with a bot.** The user session never sends,
   marks as read, or joins anything.
-- **No inbound ports.** Only outbound connections to Telegram and the Anthropic API,
+- **No inbound ports.** Only outbound connections to Telegram and the model API,
   so there is nothing to add to Caddy or the firewall.
 - Folder changes are picked up every 15 minutes without a restart.
 - Edits never re-alert. Albums are scored once, from the captioned item.
@@ -42,7 +42,8 @@ their own chat.
 |---|---|
 | `watcher/listener.py` | Telethon client, folder resolution, new-post handler, missed-post sync |
 | `watcher/pipeline.py` | Pre-filter → dedupe → score → decide → notify for one post |
-| `watcher/scorer.py` | Prompt, JSON schema and Claude call |
+| `watcher/scorer.py` | Prompt, JSON schema and result checks |
+| `watcher/backends.py` | Gemini and Claude calls (`LLM_PROVIDER`) |
 | `watcher/notifier.py` | Bot API sender, quiet-hours outbox, alert and digest formatting |
 | `watcher/store.py` | SQLite: seen posts, results, outbox |
 | `watcher/main.py` | Entry point, reconnect loop, scheduler (heartbeat, outbox, digest) |
@@ -55,15 +56,51 @@ their own chat.
 python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 ```
 
-Get `api_id` and `api_hash` at https://my.telegram.org → API development tools, then:
+**Telegram `api_id` and `api_hash`** (once per account):
+
+1. Open https://my.telegram.org in a browser and log in with your phone number in
+   international format (`+251…`). The login code arrives as a message from "Telegram"
+   inside the Telegram app, not by SMS.
+2. Click **API development tools**.
+3. Fill in the form: App title `job-watcher`, Short name `jobwatcher` (letters and
+   digits, 5–32 characters), Platform `Desktop`. URL and description can stay empty.
+4. Click **Create application**. The page shows `App api_id` (a number) and
+   `App api_hash` (32 hex characters). Treat the hash like a password.
+
+If the form says "ERROR", try again later or from another network; my.telegram.org is
+known to refuse VPN and some datacentre IPs.
+
+**Session string** (QR login):
 
 ```bash
 .venv/bin/python gen_session.py --out session.txt
 ```
 
-Scan the QR code from Telegram on your phone (Settings → Devices → Link Desktop Device).
-It prints your user id, which is your `NOTIFY_CHAT_ID`. Use `--phone` instead if QR
-login gives trouble. Delete `session.txt` once the string is on the server.
+It asks for `api_id` and `api_hash`, then draws a QR code. On your phone: Telegram →
+Settings → Devices → **Link Desktop Device**, and scan it. If you use two-step
+verification, it then asks for that password. It prints your user id, which is your
+`NOTIFY_CHAT_ID`, and writes the session string to `session.txt`. Use `--phone` instead
+if QR login gives trouble.
+
+**Notifier bot:**
+
+1. In Telegram, open a chat with **@BotFather** (blue check mark) and send `/newbot`.
+2. Give it a display name (e.g. `Job Watcher`) and a username ending in `bot`
+   (e.g. `my_job_watcher_bot`).
+3. BotFather replies with the token, `123456789:AA…`. That is `BOT_TOKEN`.
+4. Open your new bot from the link in that message and press **Start**. A bot cannot
+   message you until you do.
+
+**Model key:** Gemini at https://aistudio.google.com/apikey (free tier; read
+[Privacy](#privacy) first), or Claude at https://platform.claude.com.
+
+**Send them to the server** without them appearing on screen or in a shell history:
+
+```bash
+scripts/push-secrets.sh ubuntu@your-server ~/.ssh/your_server_key
+```
+
+It reads the session string from `./session.txt` and deletes the file afterwards.
 
 Run the tests:
 
@@ -71,8 +108,8 @@ Run the tests:
 .venv/bin/python -m pytest
 ```
 
-`tests/test_live_scorer.py` sends the sample posts to the real model (a few cents) and
-is skipped unless you set `RUN_LIVE=1` and `ANTHROPIC_API_KEY`.
+`tests/test_live_scorer.py` sends the sample posts to the real model and is skipped
+unless you set `RUN_LIVE=1` and `GEMINI_API_KEY` or `ANTHROPIC_API_KEY`.
 
 ## 2. On the OCI server
 
@@ -162,12 +199,27 @@ All in `.env`; see `.env.example`. The ones you will most likely change:
 | `DAILY_DIGEST_AT` | off | e.g. `20:00`; near misses (`NEAR_MISS_MIN`–threshold) and scoring errors |
 | `MIN_POST_CHARS` | `200` | Shorter posts never reach the API |
 | `BACKFILL_PER_CHANNEL` | `0` | First start only: score the last N posts per channel |
-| `CLAUDE_MODEL` | `claude-haiku-5-5` | |
-| `CLAUDE_EFFORT` | `medium` | `low` is cheaper, `high` thinks harder |
+| `LLM_PROVIDER` | key that is set | `gemini` or `anthropic` |
+| `LLM_MODEL` | per provider | `gemini-3.5-flash-lite` or `claude-haiku-5-5` |
+| `CLAUDE_EFFORT` | `medium` | Claude only: `low` is cheaper, `high` thinks harder |
 
-Cost: Haiku 5.5 is $0.10 / $0.50 per million input / output tokens, and the resume
-prompt is cached. Expect roughly a tenth of a cent per scored post (an estimate, not
-measured yet). Short posts and ads cost nothing.
+Cost: Gemini's free tier costs nothing but has per-minute and per-day request limits
+(see https://aistudio.google.com/rate-limit). The client retries a 429 for about two
+minutes; posts that still fail are recorded and listed in the daily digest, if
+`DAILY_DIGEST_AT` is set. On Claude, Haiku 5.5 is $0.10 / $0.50 per million input /
+output tokens with the resume prompt cached: roughly a tenth of a cent per scored post
+(an estimate). Short posts and ads never reach either API.
+
+## Privacy
+
+The resume, preferences and every scored post are sent to the provider you choose.
+
+- **Gemini free tier:** Google's terms for unpaid services allow it to use prompts and
+  responses to improve its products, and human reviewers may read them (after they are
+  disconnected from your account). Google advises against sending personal information
+  to unpaid services. Keep `config/resume.md` free of contact details, and enable
+  billing on the project if that matters to you: paid use is not used for training.
+- **Claude API:** inputs and outputs are not used for training by default.
 
 ## Security
 
@@ -175,7 +227,7 @@ measured yet). Short posts and ads cost nothing.
   mode 600 and never commit it. If it leaks: Telegram → Settings → Devices → terminate
   the `job-watcher` session, then run `gen_session.py` again.
 - The bot token never appears in logs (httpx request logging is turned off).
-- Resume and post text go only to the Anthropic API.
+- Resume and post text go only to the model provider you configure; see [Privacy](#privacy).
 - The container runs as uid 1000, read-only root filesystem, all capabilities dropped,
   256 MB memory cap, logs capped at 30 MB.
 - Telegram's terms on automating user accounts: this design only reads, through the
