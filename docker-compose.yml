@@ -4,7 +4,10 @@ name: job-watcher
 
 services:
   watcher:
-    build: .
+    build:
+      context: .
+      args:
+        UID: ${WATCHER_UID:-1000}   # from .env; must equal `id -u` of the config files' owner
     image: job-watcher:local
     restart: unless-stopped
     env_file: .env          # passed into the container

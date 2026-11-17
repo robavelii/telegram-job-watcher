@@ -10,10 +10,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# uid 1000 matches the `ubuntu` user on the server, so the mounted config files
-# can stay mode 600 and owned by that user.
+# Must match the owner of config/ on the host (`id -u`), so the mounted config files
+# can stay mode 600. Set WATCHER_UID in .env; compose passes it here.
 ARG UID=1000
-RUN useradd --uid ${UID} --create-home --shell /usr/sbin/nologin watcher \
+RUN useradd --uid ${UID} --user-group --create-home --shell /usr/sbin/nologin watcher \
  && mkdir -p /data && chown watcher:watcher /data
 
 COPY watcher ./watcher

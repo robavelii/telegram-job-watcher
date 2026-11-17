@@ -159,6 +159,12 @@ cd /opt/job-watcher/app && cp .env.example .env && chmod 600 .env && nano .env
 cp config/resume.example.md config/resume.md && cp config/preferences.example.yaml config/preferences.yaml && chmod 600 config/resume.md config/preferences.yaml
 ```
 
+Set the container's user id to yours, so it can read those mode-600 files:
+
+```bash
+sed -i "s/^WATCHER_UID=.*/WATCHER_UID=$(id -u)/" .env
+```
+
 Fill in both files, then start it. Set `DRY_RUN=1` in `.env` for the first run if you
 want to see alerts in the logs before any reach your phone.
 
@@ -228,7 +234,7 @@ The resume, preferences and every scored post are sent to the provider you choos
   the `job-watcher` session, then run `gen_session.py` again.
 - The bot token never appears in logs (httpx request logging is turned off).
 - Resume and post text go only to the model provider you configure; see [Privacy](#privacy).
-- The container runs as uid 1000, read-only root filesystem, all capabilities dropped,
+- The container runs as `WATCHER_UID` (your user), read-only root filesystem, all capabilities dropped,
   256 MB memory cap, logs capped at 30 MB.
 - Telegram's terms on automating user accounts: this design only reads, through the
   official MTProto API, at human-scale volume. Read the current terms yourself before
