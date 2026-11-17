@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import Counter
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from telethon import TelegramClient, events, utils
 from telethon.errors import FloodWaitError
@@ -174,6 +176,32 @@ class Listener:
                 if post:
                     await self.pipeline.handle(post)
         self.store.set_meta("started_once", "1")
+
+    async def scan_recent(self, hours: int, per_chat_limit: int = 200) -> Counter:
+        """Run the last `hours` of every chat through the pipeline (on request, via /scan).
+        Posts already seen are skipped by the store, so nothing is scored twice."""
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        counts: Counter = Counter()
+        for chat_id in list(self.channels):
+            try:
+                messages = []
+                async for message in self.client.iter_messages(chat_id, limit=per_chat_limit):
+                    if message.date < cutoff:
+                        break
+                    messages.append(message)
+            except FloodWaitError as exc:
+                log.warning("flood wait %ss during scan", exc.seconds)
+                await asyncio.sleep(exc.seconds)
+                continue
+            except Exception:
+                log.exception("scan failed for %s", chat_id)
+                continue
+            for message in reversed(messages):  # oldest first, one at a time to spare rate limits
+                post = self.to_post(message, chat_id)
+                if post:
+                    counts[await self.pipeline.handle(post)] += 1
+        log.info("scan of %sh done: %s", hours, dict(counts))
+        return counts
 
     # --- lifecycle ------------------------------------------------------------
 

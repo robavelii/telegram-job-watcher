@@ -16,7 +16,8 @@ from .backends import make_backend
 
 from .config import ConfigError, Settings, load_profile
 from .listener import FolderNotFound, Listener
-from .notifier import BotNotifier, Dispatcher, format_digest
+from .commands import CommandBot, Commands
+from .notifier import BotNotifier, Dispatcher
 from .pipeline import Pipeline
 from .prefilter import compile_markers
 from .scorer import Scorer
@@ -42,12 +43,13 @@ class Scheduler:
     """Once a minute: heartbeat for the healthcheck, flush the quiet-hours outbox,
     and send the daily digest when it is due."""
 
-    def __init__(self, settings: Settings, store: Store, dispatcher: Dispatcher, listener: Listener, now):
+    def __init__(self, settings: Settings, store: Store, dispatcher: Dispatcher, listener: Listener, now, commands):
         self.settings = settings
         self.store = store
         self.dispatcher = dispatcher
         self.listener = listener
         self.now = now
+        self.commands = commands
 
     def heartbeat(self) -> None:
         if self.listener.is_connected():
@@ -55,16 +57,14 @@ class Scheduler:
             path.write_text(str(int(time.time())))
 
     async def maybe_digest(self) -> None:
+        """The daily summary: everything from the last 24 hours, sent once a day at DAILY_DIGEST_AT."""
         if self.settings.digest_at is None:
             return
         now = self.now()
         today = now.date().isoformat()
         if now.time() < self.settings.digest_at or self.store.get_meta("last_digest") == today:
             return
-        rows = self.store.pending_digest(self.settings.near_miss_min, self.settings.fit_threshold)
-        if rows:
-            await self.dispatcher.deliver(format_digest(rows, self.settings.fit_threshold))
-            self.store.mark_digested(rows)
+        await self.dispatcher.deliver(self.commands.summary_text(24, title="Daily summary"))
         self.store.set_meta("last_digest", today)
 
     async def run(self) -> None:
@@ -137,7 +137,9 @@ async def amain() -> None:
         except ValueError as exc:
             log.error("config: TELEGRAM_SESSION_STRING is not a valid session string (%s)", exc)
             raise SystemExit(2) from exc
-        scheduler = Scheduler(settings, store, dispatcher, listener, now)
+        commands = Commands(settings, store, listener, started_at=time.time())
+        bot = CommandBot(http, settings.bot_token, settings.notify_chat_id, notifier, commands, store)
+        scheduler = Scheduler(settings, store, dispatcher, listener, now, commands)
 
         log.info(
             "starting: folder=%r provider=%s model=%s threshold=%d quiet=%s digest=%s dry_run=%s",
@@ -149,7 +151,7 @@ async def amain() -> None:
             settings.digest_at,
             settings.dry_run,
         )
-        await asyncio.gather(run_listener(listener, notifier), scheduler.run())
+        await asyncio.gather(run_listener(listener, notifier), scheduler.run(), bot.run())
 
 
 def main() -> None:
