@@ -1,6 +1,7 @@
-"""Runs the sample posts through the real model. Costs a few cents; off by default.
+"""Runs the sample posts through the real model. Off by default.
 
-    RUN_LIVE=1 ANTHROPIC_API_KEY=... pytest tests/test_live_scorer.py -v
+    RUN_LIVE=1 GEMINI_API_KEY=... pytest tests/test_live_scorer.py -v      # free tier
+    RUN_LIVE=1 ANTHROPIC_API_KEY=... pytest tests/test_live_scorer.py -v   # a few cents
 """
 
 import os
@@ -19,11 +20,13 @@ pytestmark = [
 
 @pytest.fixture
 def scorer():
-    import anthropic
+    from watcher.backends import make_backend
+    from watcher.config import PROVIDERS, resolve_provider
 
+    provider = resolve_provider()
+    model = os.environ.get("LLM_MODEL") or PROVIDERS[provider][1]
     return Scorer(
-        anthropic.AsyncAnthropic(),
-        model=os.environ.get("CLAUDE_MODEL", "claude-haiku-5-5"),
+        make_backend(provider, model),
         resume=(FIXTURES / "resume.md").read_text(),
         preferences=(FIXTURES / "preferences.yaml").read_text(),
     )

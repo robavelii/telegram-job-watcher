@@ -10,8 +10,9 @@ import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-import anthropic
 import httpx
+
+from .backends import make_backend
 
 from .config import ConfigError, Settings, load_profile
 from .listener import FolderNotFound, Listener
@@ -33,7 +34,7 @@ def configure_logging() -> None:
         stream=sys.stdout,
     )
     # httpx logs every request URL at INFO, and Bot API URLs contain the bot token.
-    for noisy in ("httpx", "httpcore", "telethon"):
+    for noisy in ("httpx", "httpcore", "telethon", "google_genai"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
@@ -117,14 +118,8 @@ async def amain() -> None:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     store = Store(settings.data_dir / "watcher.db")
 
-    claude = anthropic.AsyncAnthropic(max_retries=4, timeout=120)
-    scorer = Scorer(
-        claude,
-        model=settings.claude_model,
-        resume=profile.resume,
-        preferences=profile.preferences_text,
-        effort=settings.claude_effort,
-    )
+    backend = make_backend(settings.llm_provider, settings.llm_model, settings.llm_effort)
+    scorer = Scorer(backend, resume=profile.resume, preferences=profile.preferences_text)
 
     async with httpx.AsyncClient(timeout=30) as http:
         notifier = BotNotifier(http, settings.bot_token, settings.notify_chat_id, dry_run=settings.dry_run)
@@ -145,9 +140,10 @@ async def amain() -> None:
         scheduler = Scheduler(settings, store, dispatcher, listener, now)
 
         log.info(
-            "starting: folder=%r model=%s threshold=%d quiet=%s digest=%s dry_run=%s",
+            "starting: folder=%r provider=%s model=%s threshold=%d quiet=%s digest=%s dry_run=%s",
             settings.folder_name,
-            settings.claude_model,
+            settings.llm_provider,
+            settings.llm_model,
             settings.fit_threshold,
             settings.quiet_hours,
             settings.digest_at,

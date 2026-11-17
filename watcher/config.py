@@ -9,7 +9,11 @@ from pathlib import Path
 
 import yaml
 
-DEFAULT_MODEL = "claude-haiku-5-5"
+PROVIDERS = {
+    # provider: (API key variable, default model)
+    "gemini": ("GEMINI_API_KEY", "gemini-3.5-flash-lite"),
+    "anthropic": ("ANTHROPIC_API_KEY", "claude-haiku-5-5"),
+}
 
 
 class ConfigError(RuntimeError):
@@ -61,6 +65,19 @@ def parse_window(raw: str) -> tuple[time, time] | None:
     return parse_hhmm(start), parse_hhmm(end)
 
 
+def resolve_provider() -> str:
+    """LLM_PROVIDER if set; otherwise whichever provider has a key, Gemini first."""
+    raw = os.environ.get("LLM_PROVIDER", "").strip().lower()
+    if raw:
+        if raw not in PROVIDERS:
+            raise ConfigError(f"LLM_PROVIDER must be one of {sorted(PROVIDERS)}, got {raw!r}")
+        return raw
+    for provider, (key_var, _) in PROVIDERS.items():
+        if os.environ.get(key_var, "").strip():
+            return provider
+    raise ConfigError("no model API key: set GEMINI_API_KEY or ANTHROPIC_API_KEY (and optionally LLM_PROVIDER)")
+
+
 @dataclass(frozen=True)
 class Settings:
     api_id: int
@@ -69,8 +86,9 @@ class Settings:
     folder_name: str
     bot_token: str
     notify_chat_id: int
-    claude_model: str
-    claude_effort: str
+    llm_provider: str
+    llm_model: str
+    llm_effort: str
     fit_threshold: int
     near_miss_min: int
     min_post_chars: int
@@ -85,8 +103,11 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
+        provider = resolve_provider()
+        key_var, default_model = PROVIDERS[provider]
         # The SDK reads the key itself; check it here so a missing key fails at startup.
-        _required("ANTHROPIC_API_KEY")
+        _required(key_var)
+        legacy_model = os.environ.get("CLAUDE_MODEL", "").strip() if provider == "anthropic" else ""
         digest_raw = os.environ.get("DAILY_DIGEST_AT", "").strip()
         return cls(
             api_id=_required_int("TELEGRAM_API_ID"),
@@ -95,8 +116,9 @@ class Settings:
             folder_name=os.environ.get("TELEGRAM_FOLDER_NAME", "remote-jobs").strip() or "remote-jobs",
             bot_token=_required("BOT_TOKEN"),
             notify_chat_id=_required_int("NOTIFY_CHAT_ID"),
-            claude_model=os.environ.get("CLAUDE_MODEL", "").strip() or DEFAULT_MODEL,
-            claude_effort=os.environ.get("CLAUDE_EFFORT", "").strip() or "medium",
+            llm_provider=provider,
+            llm_model=os.environ.get("LLM_MODEL", "").strip() or legacy_model or default_model,
+            llm_effort=os.environ.get("CLAUDE_EFFORT", "").strip() or "medium",
             fit_threshold=_int("FIT_THRESHOLD", 70),
             near_miss_min=_int("NEAR_MISS_MIN", 50),
             min_post_chars=_int("MIN_POST_CHARS", 200),
