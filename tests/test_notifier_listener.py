@@ -5,7 +5,7 @@ import pytest
 from telethon.tl.types import DialogFilter, DialogFilterDefault, TextWithEntities
 
 from watcher.listener import Channel, FolderNotFound, Listener, find_folder
-from watcher.notifier import Dispatcher, format_alert, format_digest, in_window, split_message
+from watcher.notifier import Dispatcher, format_alert, format_summary, format_top, in_window, split_message
 
 from .conftest import result
 
@@ -40,14 +40,39 @@ async def test_quiet_hours_hold_then_flush(store, notifier, clock):
     assert store.pending_outbox() == []
 
 
-def test_digest_lists_near_misses_and_errors(store):
-    store.record_result(-1, 1, "https://t.me/a/1", "A", result(fit_score=60, eligible_from_ethiopia="unclear"))
-    store.record_error(-1, 2, "https://t.me/a/2", "A", "Claude API 529")
-    store.record_result(-1, 3, "https://t.me/a/3", "A", result(fit_score=40))
-    rows = store.pending_digest(50, 70)
-    text = format_digest(rows, 70)
-    assert "<b>60</b>" in text and "location unclear" in text and "could not score" in text
-    assert "/3" not in text
+def _seed(store):
+    store.record_result(-1, 1, "https://t.me/a/1", "A", result(title="Backend", fit_score=88))
+    store.mark_alerted(-1, 1)
+    store.record_result(-1, 2, "https://t.me/a/2", "A", result(title="Near", fit_score=60, eligible_from_ethiopia="unclear"))
+    store.record_result(-1, 3, "https://t.me/a/3", "A", result(title="EU only", fit_score=30, eligible_from_ethiopia="no"))
+    store.record_result(-1, 4, "https://t.me/a/4", "A", result(title="Weak", fit_score=40))
+    store.record_error(-1, 5, "https://t.me/a/5", "A", "Gemini API 429: quota")
+    for outcome in ["alerted", "below_threshold", "ineligible", "below_threshold", "error", "skipped:ad", "skipped:too_short", "duplicate"]:
+        store.record_outcome(outcome)
+
+
+def test_summary_counts_and_sections(store):
+    _seed(store)
+    text = format_summary(24, store.outcome_counts(0), store.results_since(0), 70, 50)
+    assert "Read 8 posts · skipped 2" in text and "duplicates 1" in text
+    assert "job posts 4 · alerts 1 · near misses 1 · closed to Ethiopia 1 · errors 1" in text
+    assert "🔥 <b>Alerts</b>" in text and "Backend" in text
+    assert "🟡 <b>Near misses</b> (50–69)" in text and "location unclear" in text
+    assert "Could not score" in text and "429" in text
+    assert "EU only" not in text and "Weak" not in text
+
+
+def test_summary_with_nothing_good_shows_best_of_the_rest(store):
+    store.record_result(-1, 4, "https://t.me/a/4", "A", result(title="Weak", fit_score=40))
+    text = format_summary(24, {"below_threshold": 1}, store.results_since(0), 70, 50)
+    assert "Nothing scored 50+" in text and "Weak" in text
+
+
+def test_top_skips_ineligible(store):
+    _seed(store)
+    text = format_top(store.results_since(0), 24, 5)
+    assert text.index("Backend") < text.index("Near") < text.index("Weak")
+    assert "EU only" not in text
 
 
 def _folder(title, ids):

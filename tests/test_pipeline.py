@@ -46,6 +46,7 @@ async def test_ad_never_reaches_the_api(store, dispatcher, notifier, markers):
     outcome = await make(store, dispatcher, markers, scorer).handle(post("ad"))
     assert outcome == "skipped:ad"
     assert scorer.calls == [] and notifier.sent == []
+    assert store.outcome_counts(0) == {"skipped:ad": 1}  # skips still count in summaries
 
 
 async def test_eu_only_role_is_not_sent(store, dispatcher, notifier, markers):
@@ -77,7 +78,8 @@ async def test_below_threshold_is_kept_for_digest(store, dispatcher, notifier, m
     outcome = await make(store, dispatcher, markers, scorer).handle(post("en_fullstack"))
     assert outcome == "below_threshold"
     assert notifier.sent == []
-    assert len(store.pending_digest(50, 70)) == 1
+    assert [r["fit_score"] for r in store.results_since(0)] == [60]
+    assert store.outcome_counts(0) == {"below_threshold": 1}
 
 
 async def test_scoring_error_is_recorded_not_raised(store, dispatcher, notifier, markers):
@@ -89,8 +91,7 @@ async def test_scoring_error_is_recorded_not_raised(store, dispatcher, notifier,
 
     outcome = await make(store, dispatcher, markers, Broken()).handle(post("en_fullstack"))
     assert outcome == "error"
-    rows = store.pending_digest(50, 70)
-    assert rows[0]["status"] == "error"
+    assert store.results_since(0)[0]["status"] == "error"
 
 
 def test_links():
