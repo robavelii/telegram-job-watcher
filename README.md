@@ -200,7 +200,7 @@ Send these to your bot. It answers only `NOTIFY_CHAT_ID` and ignores everyone el
 
 | Command | What it does |
 |---|---|
-| `/summary` | Last 24h: posts read and skipped, job posts, alerts, near misses (50–69), errors. `/summary 48` for another window |
+| `/summary` | Every post read in the last 24h, grouped (alerts, near misses, low fit, closed to Ethiopia, not jobs, errors, skipped, duplicates), each linked to the original message, so you can check what the model got wrong. `/summary 48` for another window. Long summaries arrive as several messages |
 | `/top` | Best job posts of the last 24h that are open to Ethiopia, whatever their score. `/top 10` |
 | `/status` | Connected or not, chats watched, last post read, model, summary time |
 | `/scan` | Re-read the last 24h of every chat (max 72: `/scan 6`). Posts already seen are skipped, alerts arrive as usual. Takes minutes, and on the Gemini free tier it spends quota |
