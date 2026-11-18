@@ -22,10 +22,10 @@ minimum_rate: "USD 2000 / month"
 hard_exclusions:
   - Gambling, betting or casino products
   - Office or hybrid work
-  - Roles that need Ukrainian or EU residency
+  - Roles that need residency or a work permit you do not have
 
 notes: |
-  Based in Ethiopia (UTC+3). Can overlap with European working hours.
+  Based in Country (UTC+X). Can overlap with European working hours.
 
 # Extra phrases that mark a post as an ad; matched case-insensitively before any API call.
 ad_markers: []

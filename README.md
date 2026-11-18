@@ -1,172 +1,178 @@
 # telegram-job-watcher
 
-Watches every channel in one Telegram folder (`remote-jobs`), decides whether each new
-post is a job, translates it, scores it against your resume with Gemini or Claude, and pings you
-through a bot when it fits.
+[![CI](https://github.com/robavelii/telegram-job-watcher/actions/workflows/ci.yml/badge.svg)](https://github.com/robavelii/telegram-job-watcher/actions/workflows/ci.yml)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Docker](https://img.shields.io/badge/runs%20in-Docker-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+**Reads the Telegram job channels you follow, keeps the jobs that fit you and that you can
+actually take from where you live, and sends them to you as alerts.**
+
+It watches every channel in one Telegram folder. For each new post it uses an LLM (Gemini or
+Claude) to decide whether the post is a job, translate it into English, check whether
+someone in your country can apply, and score it 0–100 against your resume. Only the good
+ones reach your phone, through a bot of your own.
+
+## Why
+
+Many good remote jobs are posted only in Telegram channels, often in Ukrainian or Russian,
+mixed with ads, courses and reposts. Following a few dozen channels means reading hundreds of
+posts a day, and many of the ones that look right turn out to be "remote, Ukraine only" or to
+need an EU work permit. This is a real problem if you live somewhere else.
+
+This tool was built to do that reading for one job seeker outside the channels' home
+countries: translate everything, throw away what isn't a job or isn't open to them, and ping
+only for roles that match their resume. A daily summary links every post it read, so you can
+check what the model decided and why.
+
+## Features
+
+- **Any language in, English out.** Each post comes back as a title, company, stack,
+  salary, a short summary, why it fits, what's missing and how to apply.
+- **Location-aware.** Each job is marked open, closed or unclear for your
+  `CANDIDATE_LOCATION`. Posts limited to other countries can't score above 30, and the
+  code enforces that cap as well as the prompt.
+- **Scored against your resume and preferences.** You choose the alert threshold; near
+  misses go into the daily summary instead.
+- **Reads with your account, writes with a bot.** Your account never posts, joins
+  anything or marks posts as read.
+- **Cheap.** Short posts and ads are filtered out before any API call. Near-duplicate
+  reposts across channels are scored once. Gemini's free tier is enough for most people.
+- **Hands-off.** The folder is re-read every 15 minutes, so adding a channel needs no
+  restart. After downtime it catches up on missed posts. It can hold alerts during quiet
+  hours.
+- **No inbound ports.** It only makes outbound connections, so it runs on any machine
+  with Docker.
+
+## How it works
 
 ```
 Telegram (your user account, MTProto, read-only)
-  │ new post in a folder channel
+  │ new post in a channel in your folder
   ▼
 listener ── pre-filter (length, ad markers) ── dedupe (SQLite, exact + near-duplicate)
   │
   ▼
-scorer: one Gemini or Claude call → strict JSON (is job? translation, eligibility, fit 0-100)
-  │ job, fit ≥ FIT_THRESHOLD, eligible from Ethiopia ≠ "no"
+scorer: one Gemini or Claude call → strict JSON
+        (is it a job? translation, open to CANDIDATE_LOCATION?, fit 0-100)
+  │ job, fit ≥ FIT_THRESHOLD, not closed to your location
   ▼
-notifier: Bot API sendMessage to your own chat (held during quiet hours)
+notifier: Telegram bot message to you (held during quiet hours)
 ```
 
-- **Reads with your account, writes with a bot.** The user session never sends,
-  marks as read, or joins anything. The bot answers commands from your chat only.
-- **No inbound ports.** Only outbound connections to Telegram and the model API,
-  so there is nothing to add to Caddy or the firewall.
-- Folder changes are picked up every 15 minutes without a restart.
-- Edits never re-alert. Albums are scored once, from the captioned item.
-- After a restart it fetches up to 50 posts per channel that it missed while down.
-- Post text is untrusted: the model has no tools, the post is wrapped in delimiters,
-  and the location cap is enforced in code as well as in the prompt.
+An alert looks like this:
 
-## Do I need a bot?
+```
+✅ 84/100 · Senior Backend Engineer (Python)
+🏢 Orbital Labs
+💼 Senior · Full-time · $4,000–5,500
+🧰 Python, FastAPI, PostgreSQL, AWS
+🌍 Open to you: yes (worldwide, async team)
 
-Yes. The design never sends from your account, and a message you send yourself
-(Saved Messages) does not notify you anyway. A bot's message is a normal push
-notification. Make a new one with @BotFather (`/newbot`, about a minute) and press
-**Start** on it once. Reusing another bot's token also works, since the watcher only
-calls `sendMessage` and never reads updates, but a separate bot keeps these alerts in
-their own chat.
+Builds the billing API for a B2B SaaS product…
 
-## Files
+Why it fits
+• 5 years of Python and FastAPI
+• …
 
-| Path | What |
-|---|---|
-| `watcher/listener.py` | Telethon client, folder resolution, new-post handler, missed-post sync |
-| `watcher/pipeline.py` | Pre-filter → dedupe → score → decide → notify for one post |
-| `watcher/scorer.py` | Prompt, JSON schema and result checks |
-| `watcher/backends.py` | Gemini and Claude calls (`LLM_PROVIDER`) |
-| `watcher/notifier.py` | Bot API sender, quiet-hours outbox, alert and digest formatting |
-| `watcher/store.py` | SQLite: seen posts, results, outbox |
-| `watcher/main.py` | Entry point, reconnect loop, scheduler (heartbeat, outbox, digest) |
-| `gen_session.py` | Makes the session string. Run it on your laptop |
-| `config/*.example` | Templates for `resume.md` and `preferences.yaml` (both gitignored) |
+Apply: @orbital_hr
+📎 Remote IT Jobs
+```
 
-## 1. On your laptop
+## What you need
+
+- A Telegram account, and the job channels you want watched in one
+  [chat folder](https://telegram.org/blog/folders) (for example `remote-jobs`).
+- A Telegram bot of your own for the alerts (free, about a minute with @BotFather).
+- A model API key: [Gemini](https://aistudio.google.com/apikey) (free tier) or
+  [Claude](https://platform.claude.com).
+- Docker with Compose on the machine that runs it: a laptop that stays on, a home server
+  or a small VPS. The container is limited to 256 MB of memory.
+- Python 3.12+ on your own computer, once, to log in to Telegram.
+
+## Setup
+
+### 1. Get the code
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+git clone https://github.com/robavelii/telegram-job-watcher.git
 ```
 
-**Telegram `api_id` and `api_hash`** (once per account):
+```bash
+cd telegram-job-watcher && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+```
 
-1. Open https://my.telegram.org in a browser and log in with your phone number in
-   international format (`+251…`). The login code arrives as a message from "Telegram"
-   inside the Telegram app, not by SMS.
-2. Click **API development tools**.
-3. Fill in the form: App title `job-watcher`, Short name `jobwatcher` (letters and
-   digits, 5–32 characters), Platform `Desktop`. URL and description can stay empty.
-4. Click **Create application**. The page shows `App api_id` (a number) and
-   `App api_hash` (32 hex characters). Treat the hash like a password.
+### 2. Telegram API credentials
 
-If the form says "ERROR", try again later or from another network; my.telegram.org is
-known to refuse VPN and some datacentre IPs.
+1. Log in at https://my.telegram.org with your phone number in international format. The
+   code arrives as a message from "Telegram" inside the Telegram app, not by SMS.
+2. Open **API development tools** and fill in the form. For example: App title
+   `job-watcher`, Short name `jobwatcher`, Platform `Desktop`. URL and description can
+   stay empty.
+3. Note `App api_id` (a number) and `App api_hash` (32 hex characters). Treat the hash
+   like a password.
 
-**Session string** (QR login):
+If the form says "ERROR", try again later or from another network. my.telegram.org often
+refuses VPN and datacentre IP addresses.
+
+### 3. Session string
 
 ```bash
 .venv/bin/python gen_session.py --out session.txt
 ```
 
-It asks for `api_id` and `api_hash`, then draws a QR code. On your phone: Telegram →
-Settings → Devices → **Link Desktop Device**, and scan it. If you use two-step
-verification, it then asks for that password. It prints your user id, which is your
-`NOTIFY_CHAT_ID`, and writes the session string to `session.txt`. Use `--phone` instead
-if QR login gives trouble.
+It asks for the `api_id` and `api_hash`, then shows a QR code. On your phone, go to
+Telegram → Settings → Devices → **Link Desktop Device** and scan it. It also asks for your
+two-step verification password if you have one. When it's done, it prints your user id
+(this is your `NOTIFY_CHAT_ID`) and writes the session string to `session.txt`. If QR
+login gives you trouble, use `--phone` instead.
 
-**Notifier bot:**
+> The session string gives full access to your Telegram account. Never share or commit it.
 
-1. In Telegram, open a chat with **@BotFather** (blue check mark) and send `/newbot`.
-2. Give it a display name (e.g. `Job Watcher`) and a username ending in `bot`
-   (e.g. `my_job_watcher_bot`).
-3. BotFather replies with the token, `123456789:AA…`. That is `BOT_TOKEN`.
-4. Open your new bot from the link in that message and press **Start**. A bot cannot
-   message you until you do.
+### 4. Alert bot
 
-**Model key:** Gemini at https://aistudio.google.com/apikey (free tier; read
-[Privacy](#privacy) first), or Claude at https://platform.claude.com.
+1. In Telegram, message **@BotFather** (it has a blue check mark) and send `/newbot`.
+2. Give the bot a name and a username ending in `bot`, for example `my_job_watcher_bot`.
+3. Copy the token BotFather sends you (`123456789:AA…`). This is your `BOT_TOKEN`.
+4. Open the new bot from BotFather's message and press **Start**. A bot can't message
+   you until you do.
 
-**Send them to the server** without them appearing on screen or in a shell history:
+### 5. Configure
 
 ```bash
-scripts/push-secrets.sh ubuntu@your-server ~/.ssh/your_server_key
-```
-
-It reads the session string from `./session.txt` and deletes the file afterwards.
-
-Run the tests:
-
-```bash
-.venv/bin/python -m pytest
-```
-
-`tests/test_live_scorer.py` sends the sample posts to the real model and is skipped
-unless you set `RUN_LIVE=1` and `GEMINI_API_KEY` or `ANTHROPIC_API_KEY`.
-
-## 2. On the OCI server
-
-The host already runs several compose projects behind a shared system Caddy
-(`/etc/caddy/sites/*.caddy`, ports 80/443). This service publishes no ports and needs
-no site file, so none of them are touched. Compose project name: `job-watcher`.
-
-```bash
-ssh -i ~/.ssh/your_server_key ubuntu@your-server
-```
-
-Read-only deploy key for the clone, same pattern as the other apps:
-
-```bash
-ssh-keygen -t ed25519 -N "" -f ~/.ssh/job_watcher_deploy -C job-watcher-deploy
-```
-
-```bash
-printf '\nHost github-job-watcher\n  HostName github.com\n  User git\n  IdentityFile ~/.ssh/job_watcher_deploy\n  IdentitiesOnly yes\n' >> ~/.ssh/config
-```
-
-```bash
-cat ~/.ssh/job_watcher_deploy.pub
-```
-
-Add that key on your laptop (read-only by default):
-
-```bash
-gh repo deploy-key add job_watcher_deploy.pub -R robavelii/telegram-job-watcher --title my-server
-```
-
-Back on the server:
-
-```bash
-sudo install -d -o ubuntu -g ubuntu /opt/job-watcher
-```
-
-```bash
-git clone git@github-job-watcher:robavelii/telegram-job-watcher.git /opt/job-watcher/app
-```
-
-```bash
-cd /opt/job-watcher/app && cp .env.example .env && chmod 600 .env && nano .env
+cp .env.example .env && chmod 600 .env
 ```
 
 ```bash
 cp config/resume.example.md config/resume.md && cp config/preferences.example.yaml config/preferences.yaml && chmod 600 config/resume.md config/preferences.yaml
 ```
 
-Set the container's user id to yours, so it can read those mode-600 files:
-
 ```bash
 sed -i "s/^WATCHER_UID=.*/WATCHER_UID=$(id -u)/" .env
 ```
 
-Fill in both files, then start it. Set `DRY_RUN=1` in `.env` for the first run if you
-want to see alerts in the logs before any reach your phone.
+The last command lets the container read your mode-600 config files. On macOS, edit
+`WATCHER_UID` in `.env` by hand instead.
+
+Fill in `.env`. These are required:
+
+| Variable | Value |
+|---|---|
+| `TELEGRAM_API_ID`, `TELEGRAM_API_HASH` | From step 2 |
+| `TELEGRAM_SESSION_STRING` | The contents of `session.txt` from step 3 (then delete the file) |
+| `TELEGRAM_FOLDER_NAME` | Name of your Telegram folder of job channels (default `remote-jobs`) |
+| `BOT_TOKEN` | From step 4 |
+| `NOTIFY_CHAT_ID` | Your user id, printed in step 3 |
+| `CANDIDATE_LOCATION` | The country you work from, e.g. `Kenya` or `United Kingdom` |
+| `GEMINI_API_KEY` or `ANTHROPIC_API_KEY` | Your model key |
+| `TZ_NAME` | Your time zone, e.g. `Europe/Berlin` (default `UTC`) |
+
+Then fill in `config/resume.md` (your resume as plain text or Markdown) and
+`config/preferences.yaml`: target roles, stack, minimum rate, and anything that should
+never alert. The model reads both files on every post, so describe what you want the way
+you would to a recruiter. Leave out your contact details; the model doesn't need them.
+
+### 6. Run
 
 ```bash
 docker compose up -d --build
@@ -176,80 +182,137 @@ docker compose up -d --build
 docker compose logs -f
 ```
 
-`docker compose ps` shows `healthy` about three minutes after start. `.env`,
-`config/resume.md` and `config/preferences.yaml` are gitignored, so `git pull` never
-touches them. Do not run `git clean -x` in the clone.
+Within a minute the log shows a line like `folder 'remote-jobs': N chats`, and from then
+on new posts are scored as they arrive. `docker compose ps` reports `healthy` about three
+minutes after the start.
 
-**Update:**
+To see alerts in the log before any reach your phone, set `DRY_RUN=1` for the first run.
+To score some recent posts straight away, set `BACKFILL_PER_CHANNEL=20` before the first
+start, or send `/scan` to your bot.
+
+### Running it on a server
+
+The steps are the same on any Linux machine with Docker. Clone the repo there and create
+`config/resume.md` and `config/preferences.yaml` on the server (step 5). The secrets don't
+have to be typed into a remote shell. From your computer, run:
 
 ```bash
-cd /opt/job-watcher/app && git pull --ff-only && docker compose up -d --build
+scripts/push-secrets.sh user@your-server ~/.ssh/id_ed25519 telegram-job-watcher
 ```
 
-## 3. Test
+It asks for each value without echoing it and writes it into the server's `.env` over SSH.
+The last argument is the clone's path on the server, relative to your home directory. It
+reads `./session.txt` if it exists and deletes the file afterwards.
 
-1. Create a private test channel, add it to the `remote-jobs` folder.
-2. Wait for the log line `folder 'remote-jobs': N chats (+1 -0)` (up to 15 minutes, or
-   `docker compose restart`).
-3. Paste one of `tests/fixtures/posts/*.txt` into it. The alert should arrive within
-   seconds. Your own posts count; there is no "incoming only" filter.
+To update:
 
-## Bot commands
+```bash
+git pull --ff-only && docker compose up -d --build
+```
+
+`.env` and `config/` are gitignored, so `git pull` never touches them.
+
+## Using it
+
+### Bot commands
 
 Send these to your bot. It answers only `NOTIFY_CHAT_ID` and ignores everyone else.
 
 | Command | What it does |
 |---|---|
-| `/summary` | Every post read in the last 24h, grouped (alerts, near misses, low fit, closed to Ethiopia, not jobs, errors, skipped, duplicates), each linked to the original message, so you can check what the model got wrong. `/summary 48` for another window. Long summaries arrive as several messages |
-| `/top` | Best job posts of the last 24h that are open to Ethiopia, whatever their score. `/top 10` |
-| `/status` | Connected or not, chats watched, last post read, model, summary time |
-| `/scan` | Re-read the last 24h of every chat (max 72: `/scan 6`). Posts already seen are skipped, alerts arrive as usual. Takes minutes, and on the Gemini free tier it spends quota |
+| `/summary` | Every post read in the last 24 hours, grouped: alerts, near misses, low fit, not open to your location, not jobs, errors, skipped and duplicates. Each one links to the original message, so you can check what the model got wrong. `/summary 48` gives another window. A long summary arrives as several messages |
+| `/top` | The best job posts of the last 24 hours that are open to you, whatever their score. `/top 10` |
+| `/status` | Whether it's connected, chats watched, last post read, model, summary time |
+| `/scan` | Re-reads the last 24 hours of every chat (up to 72: `/scan 6`). Posts already seen are skipped and alerts arrive as usual. It takes minutes, and on the Gemini free tier it uses quota |
 | `/help` | The list above |
 
-The same summary arrives every day at `DAILY_DIGEST_AT`.
+If `DAILY_DIGEST_AT` is set, the same summary also arrives every day at that time.
 
-## Settings
+### Try it end to end
 
-All in `.env`; see `.env.example`. The ones you will most likely change:
+1. Create a private test channel and add it to your folder.
+2. Wait for the log line `folder '<name>': N chats (+1 -0)`. This takes up to 15
+   minutes, or run `docker compose restart`.
+3. Paste one of `tests/fixtures/posts/*.txt` into the channel. The alert should arrive
+   within seconds; posts you write yourself count too.
+
+### Settings
+
+All settings live in `.env`; [`.env.example`](.env.example) documents every one. These are
+the ones you're most likely to change:
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `FIT_THRESHOLD` | `70` | Minimum fit score for an alert |
+| `NEAR_MISS_MIN` | `50` | Scores from here up to the threshold are listed as near misses in summaries |
 | `QUIET_HOURS` | off | e.g. `23:00-07:00` in `TZ_NAME`; alerts are held and sent when it ends |
-| `DAILY_DIGEST_AT` | off | e.g. `20:00`; the `/summary` of the last 24h, sent daily |
+| `DAILY_DIGEST_AT` | off | e.g. `20:00`; sends the `/summary` of the last 24 hours every day |
 | `MIN_POST_CHARS` | `200` | Shorter posts never reach the API |
-| `BACKFILL_PER_CHANNEL` | `0` | First start only: score the last N posts per channel |
-| `LLM_PROVIDER` | key that is set | `gemini` or `anthropic` |
+| `BACKFILL_PER_CHANNEL` | `0` | First start only: score the last N posts of each channel |
+| `LLM_PROVIDER` | the key that is set | `gemini` or `anthropic` |
 | `LLM_MODEL` | per provider | `gemini-3.5-flash-lite` or `claude-haiku-5-5` |
 | `CLAUDE_EFFORT` | `medium` | Claude only: `low` is cheaper, `high` thinks harder |
 
-Cost: Gemini's free tier costs nothing but has per-minute and per-day request limits
-(see https://aistudio.google.com/rate-limit). The client retries a 429 for about two
-minutes; posts that still fail are recorded and listed in the daily digest, if
-`DAILY_DIGEST_AT` is set. On Claude, Haiku 5.5 is $0.10 / $0.50 per million input /
-output tokens with the resume prompt cached: roughly a tenth of a cent per scored post
-(an estimate). Short posts and ads never reach either API.
+### Cost
+
+- **Gemini.** The free tier costs nothing but has per-minute and per-day request limits
+  (see https://aistudio.google.com/rate-limit). The client retries rate-limited requests
+  for about two minutes. Posts that still fail are recorded and listed in the summary.
+- **Claude.** Haiku 5.5 costs $0.10 per million input tokens and $0.50 per million output
+  tokens, with the resume part of the prompt cached. That works out to roughly a tenth of
+  a cent per scored post (an estimate).
+- **Either way,** short posts, ads and duplicates never reach the API.
 
 ## Privacy
 
-The resume, preferences and every scored post are sent to the provider you choose.
+Your resume, your preferences and every scored post are sent to the model provider you
+choose.
 
-- **Gemini free tier:** Google's terms for unpaid services allow it to use prompts and
-  responses to improve its products, and human reviewers may read them (after they are
-  disconnected from your account). Google advises against sending personal information
-  to unpaid services. Keep `config/resume.md` free of contact details, and enable
-  billing on the project if that matters to you: paid use is not used for training.
+- **Gemini free tier:** Google's terms for unpaid services let it use prompts and
+  responses to improve its products, and human reviewers may read them. Keep contact
+  details out of `config/resume.md`, and enable billing on the Google Cloud project if this
+  matters to you. Paid use is not used for training.
 - **Claude API:** inputs and outputs are not used for training by default.
+
+Apart from Telegram and the model provider, nothing leaves the machine. Post texts and
+results stay in a local SQLite file in the `watcher-data` Docker volume.
 
 ## Security
 
-- `TELEGRAM_SESSION_STRING` is full access to your Telegram account. Keep `.env` at
-  mode 600 and never commit it. If it leaks: Telegram → Settings → Devices → terminate
-  the `job-watcher` session, then run `gen_session.py` again.
-- The bot token never appears in logs (httpx request logging is turned off).
-- Resume and post text go only to the model provider you configure; see [Privacy](#privacy).
-- The container runs as `WATCHER_UID` (your user), read-only root filesystem, all capabilities dropped,
-  256 MB memory cap, logs capped at 30 MB.
-- Telegram's terms on automating user accounts: this design only reads, through the
-  official MTProto API, at human-scale volume. Read the current terms yourself before
-  relying on it.
+- `TELEGRAM_SESSION_STRING` gives full access to your Telegram account. Keep `.env` at
+  mode 600 and never commit it. If it leaks, go to Telegram → Settings → Devices,
+  terminate the `job-watcher` session, and run `gen_session.py` again.
+- Post text is treated as untrusted input. The model has no tools, posts are wrapped in
+  delimiters, the prompt tells it to ignore instructions inside them, and the location cap
+  is enforced in code.
+- The bot token never appears in logs, because HTTP request logging is turned off.
+- The container runs as a non-root user with a read-only filesystem, no Linux capabilities
+  and no open ports.
+
+## Development
+
+```bash
+.venv/bin/python -m pytest
+```
+
+`tests/test_live_scorer.py` sends the sample posts to the real model. It's skipped unless
+you set `RUN_LIVE=1` and `GEMINI_API_KEY` or `ANTHROPIC_API_KEY`.
+
+| Path | What |
+|---|---|
+| `watcher/listener.py` | Telethon client, folder resolution, new-post handler, missed-post sync |
+| `watcher/pipeline.py` | Pre-filter → dedupe → score → decide → notify, for one post |
+| `watcher/scorer.py` | Prompt, JSON schema and result checks |
+| `watcher/backends.py` | Gemini and Claude calls (`LLM_PROVIDER`) |
+| `watcher/notifier.py` | Bot API sender, quiet-hours outbox, alert and summary formatting |
+| `watcher/commands.py` | Bot commands |
+| `watcher/store.py` | SQLite: seen posts, results, outbox |
+| `watcher/main.py` | Entry point, reconnect loop, scheduler (heartbeat, outbox, digest) |
+| `gen_session.py` | Creates the Telegram session string. Run it on your own computer |
+| `scripts/push-secrets.sh` | Writes secrets into a server's `.env` over SSH without echoing them |
+
+Issues and pull requests are welcome.
+
+## License
+
+[MIT](LICENSE)

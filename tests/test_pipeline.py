@@ -10,7 +10,7 @@ CANNED = {
     "Lumera Health": result(title="Senior Backend Engineer", source_language="uk", fit_score=88),
     "DataPort": result(title="Python Developer", source_language="ru", fit_score=76, apply_urgency="high"),
     "Orbital Labs": result(title="Full-Stack Engineer", source_language="en", fit_score=82),
-    "Nordwave": result(title="Senior Node.js Developer", eligible_from_ethiopia="no", fit_score=30),
+    "Nordwave": result(title="Senior Node.js Developer", eligible="no", fit_score=30),
 }
 
 
@@ -74,7 +74,7 @@ async def test_same_message_twice_is_seen(store, dispatcher, notifier, markers):
 
 
 async def test_below_threshold_is_kept_for_digest(store, dispatcher, notifier, markers):
-    scorer = FakeScorer({"Orbital Labs": result(fit_score=60, eligible_from_ethiopia="unclear")})
+    scorer = FakeScorer({"Orbital Labs": result(fit_score=60, eligible="unclear")})
     outcome = await make(store, dispatcher, markers, scorer).handle(post("en_fullstack"))
     assert outcome == "below_threshold"
     assert notifier.sent == []

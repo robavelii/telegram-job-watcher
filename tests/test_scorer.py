@@ -12,6 +12,8 @@ from .conftest import FIXTURES, load_post, result
 
 RESUME = (FIXTURES / "resume.md").read_text()
 PREFS = (FIXTURES / "preferences.yaml").read_text()
+# The sample candidate in tests/fixtures/resume.md lives here.
+LOCATION = "Ethiopia"
 
 
 # --- provider-neutral ------------------------------------------------------------
@@ -30,7 +32,7 @@ class StaticBackend:
 
 async def test_scorer_sends_resume_in_system_and_post_in_user():
     backend = StaticBackend(json.dumps(result(fit_score=81)))
-    out = await Scorer(backend, RESUME, PREFS).score(load_post("ua_backend"), "UA Jobs")
+    out = await Scorer(backend, RESUME, PREFS, LOCATION).score(load_post("ua_backend"), "UA Jobs")
     assert out["fit_score"] == 81
     system, user = backend.calls[0]
     assert RESUME.strip() in system and "untrusted data" in system
@@ -39,7 +41,13 @@ async def test_scorer_sends_resume_in_system_and_post_in_user():
 
 
 def test_system_prompt_identical_across_posts():
-    assert build_system(RESUME, PREFS) == build_system(RESUME, PREFS)
+    assert build_system(RESUME, PREFS, LOCATION) == build_system(RESUME, PREFS, LOCATION)
+
+
+def test_system_prompt_names_the_candidate_location():
+    system = build_system(RESUME, PREFS, "Kenya")
+    assert "lives in Kenya" in system and "exclude Kenya" in system
+    assert "{location}" not in system
 
 
 def test_post_cannot_close_the_wrapper():
@@ -56,14 +64,14 @@ def test_schema_requires_every_field():
 @pytest.mark.parametrize("text", ["not json", "[1, 2]"])
 async def test_bad_json_raises(text):
     with pytest.raises(ScoreError):
-        await Scorer(StaticBackend(text), RESUME, PREFS).score("x" * 300, "Jobs")
+        await Scorer(StaticBackend(text), RESUME, PREFS, LOCATION).score("x" * 300, "Jobs")
 
 
 def test_clean_result_enforces_caps():
-    assert clean_result(result(fit_score=95, eligible_from_ethiopia="no"))["fit_score"] == 30
+    assert clean_result(result(fit_score=95, eligible="no"))["fit_score"] == 30
     assert clean_result(result(fit_score=95, is_job_posting=False))["fit_score"] == 0
     assert clean_result(result(fit_score=140))["fit_score"] == 100
-    assert clean_result(result(eligible_from_ethiopia="maybe"))["eligible_from_ethiopia"] == "unclear"
+    assert clean_result(result(eligible="maybe"))["eligible"] == "unclear"
 
 
 # --- Claude ----------------------------------------------------------------------
@@ -139,7 +147,7 @@ def gemini_response(payload, finish="STOP", block_reason=None):
 async def test_gemini_request_and_parse():
     models = FakeGeminiModels(gemini_response(result(fit_score=73)))
     backend = GeminiBackend(gemini_client(models), "gemini-3.5-flash-lite")
-    out = await Scorer(backend, RESUME, PREFS).score(load_post("en_fullstack"), "Jobs")
+    out = await Scorer(backend, RESUME, PREFS, LOCATION).score(load_post("en_fullstack"), "Jobs")
     assert out["fit_score"] == 73
     assert models.kwargs["model"] == "gemini-3.5-flash-lite"
     config = models.kwargs["config"]

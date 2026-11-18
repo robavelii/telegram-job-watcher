@@ -2,7 +2,8 @@
 # Asks for the watcher's secrets on this machine and writes them into the server's .env
 # over SSH. Values go through ssh's stdin, never the command line, and are not echoed.
 #
-#   scripts/push-secrets.sh ubuntu@your-server ~/.ssh/your_server_key
+#   scripts/push-secrets.sh user@server [ssh-key] [remote-app-dir]
+#   scripts/push-secrets.sh me@203.0.113.10 ~/.ssh/id_ed25519 telegram-job-watcher
 #
 # Press Enter at any prompt to keep the value already on the server.
 # If ./session.txt exists (from `gen_session.py --out session.txt`) it is used for
@@ -11,7 +12,8 @@ set -euo pipefail
 
 HOST=${1:?usage: push-secrets.sh user@host [ssh-key] [remote-app-dir]}
 KEY=${2:-}
-DIR=${3:-/opt/job-watcher/app}
+# Relative paths are relative to the remote user's home directory.
+DIR=${3:-telegram-job-watcher}
 SSH=(ssh -o BatchMode=yes)
 [[ -n $KEY ]] && SSH+=(-i "$KEY")
 
@@ -30,6 +32,16 @@ ask() { # name, prompt, regex, hidden(0/1)
   done
 }
 
+ask_text() { # name, prompt: free text such as a country name; spaces kept, ends trimmed
+  local name=$1 prompt=$2 value
+  read -rp "$prompt (Enter = keep): " value
+  value=${value//[$'\t\r\n']/}
+  value=${value#"${value%%[![:space:]]*}"}
+  value=${value%"${value##*[![:space:]]}"}
+  [[ -n $value ]] && add "$name" "$value"
+  return 0
+}
+
 echo "Writing to $HOST:$DIR/.env"
 ask TELEGRAM_API_ID   "Telegram api_id (my.telegram.org)" '^[0-9]+$' 0
 ask TELEGRAM_API_HASH "Telegram api_hash"                 '^[0-9a-f]{32}$' 1
@@ -45,6 +57,7 @@ fi
 
 ask BOT_TOKEN         "Bot token (@BotFather)"            '^[0-9]+:[A-Za-z0-9_-]{30,}$' 1
 ask NOTIFY_CHAT_ID    "Your Telegram user id"             '^-?[0-9]+$' 0
+ask_text CANDIDATE_LOCATION "Country you work from (e.g. Kenya)"
 provider=""
 while [[ -z $provider ]]; do
   read -rp "Model provider, gemini or anthropic (Enter = gemini): " provider

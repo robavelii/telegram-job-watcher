@@ -153,7 +153,7 @@ class Dispatcher:
 
 def format_alert(result: dict, link: str, channel: str) -> str:
     urgent = result.get("apply_urgency") == "high"
-    eligible = result.get("eligible_from_ethiopia", "unclear")
+    eligible = result.get("eligible", "unclear")
     head = f"{'🔥' if urgent else '✅'} <b>{result['fit_score']}/100</b> · {esc(result.get('title') or 'Untitled role')}"
     lines = [head]
     if result.get("company"):
@@ -164,7 +164,7 @@ def format_alert(result: dict, link: str, channel: str) -> str:
     if result.get("stack"):
         lines.append("🧰 " + esc(", ".join(result["stack"][:12])))
     location = result.get("location_rules") or "not stated"
-    lines.append(f"🌍 Ethiopia: <b>{esc(eligible)}</b> ({esc(location)})")
+    lines.append(f"🌍 Open to you: <b>{esc(eligible)}</b> ({esc(location)})")
     if result.get("summary_en"):
         lines += ["", esc(result["summary_en"])]
     if result.get("fit_reasons"):
@@ -254,7 +254,7 @@ def format_summary(
     lines = [
         f"📊 <b>{esc(title)}</b>, last {hours}h — every post read, each linked",
         f"Read {read} · scored {len(scored)} · job posts {len(jobs)} · alerts {len(alerts)} · "
-        f"near misses {len(near)} · closed to Ethiopia {len(closed)} · skipped {len(skipped)} · "
+        f"near misses {len(near)} · not open to you {len(closed)} · skipped {len(skipped)} · "
         f"duplicates {len(duplicates)} · errors {len(errors)}",
     ]
 
@@ -265,7 +265,7 @@ def format_summary(
     section(f"🔥 <b>Alerts</b>, {threshold}+", alerts, _job_line)
     section(f"🟡 <b>Near misses</b>, {near_min}–{threshold - 1}", near, _job_line)
     section(f"📉 <b>Low fit</b>, under {near_min}", below, _job_line)
-    section("🚫 <b>Closed to Ethiopia</b>", closed, _closed_line)
+    section("🚫 <b>Not open to your location</b>", closed, _closed_line)
     section("📰 <b>Not job posts</b>", not_jobs, _not_job_line)
     section("⚠️ <b>Could not score</b>", errors,
             lambda r: f"• {_source(r['link'], r['channel'])}: {esc((r['error'] or '')[:90])}")
@@ -290,5 +290,5 @@ def format_summary(
 def format_top(rows: list, hours: int, n: int) -> str:
     jobs = [r for r in rows if r["status"] == "scored" and r["is_job"] and r["eligible"] != "no"][:n]
     if not jobs:
-        return f"No job posts open to Ethiopia in the last {hours}h yet."
+        return f"No job posts open to you in the last {hours}h yet."
     return "\n".join([f"🏆 <b>Top {len(jobs)}</b>, last {hours}h"] + [_job_line(r) for r in jobs])

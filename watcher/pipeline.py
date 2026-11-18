@@ -78,7 +78,7 @@ class Pipeline:
             return "error"
 
         self.store.record_result(post.chat_id, post.msg_id, link, post.channel_title, result)
-        score, eligible = result["fit_score"], result["eligible_from_ethiopia"]
+        score, eligible = result["fit_score"], result["eligible"]
         log.info(
             "scored %s: job=%s score=%s eligible=%s title=%r",
             link or post.msg_id,

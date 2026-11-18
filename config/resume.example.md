@@ -1,6 +1,6 @@
 # Your Name
 
-Remote software engineer based in Addis Ababa, Ethiopia (UTC+3). Open to worldwide remote work.
+Remote software engineer based in City, Country (UTC+X). Open to worldwide remote work.
 
 ## Summary
 Two or three lines: what you build, for whom, and at what level.
@@ -22,4 +22,4 @@ Two or three lines: what you build, for whom, and at what level.
 - Project: one line on what it does and the stack.
 
 ## Languages
-English (fluent), Amharic (native), ...
+English (fluent), ...
