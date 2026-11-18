@@ -28,7 +28,7 @@ def result(**overrides) -> dict:
         "employment_type": "full-time",
         "salary": "$4000",
         "location_rules": "worldwide",
-        "eligible_from_ethiopia": "yes",
+        "eligible": "yes",
         "fit_score": 85,
         "fit_reasons": ["NestJS match"],
         "gaps": [],

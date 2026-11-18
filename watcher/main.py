@@ -119,7 +119,7 @@ async def amain() -> None:
     store = Store(settings.data_dir / "watcher.db")
 
     backend = make_backend(settings.llm_provider, settings.llm_model, settings.llm_effort)
-    scorer = Scorer(backend, resume=profile.resume, preferences=profile.preferences_text)
+    scorer = Scorer(backend, resume=profile.resume, preferences=profile.preferences_text, location=settings.candidate_location)
 
     async with httpx.AsyncClient(timeout=30) as http:
         notifier = BotNotifier(http, settings.bot_token, settings.notify_chat_id, dry_run=settings.dry_run)

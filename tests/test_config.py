@@ -8,8 +8,9 @@ BASE = {
     "TELEGRAM_SESSION_STRING": "s",
     "BOT_TOKEN": "t",
     "NOTIFY_CHAT_ID": "2",
+    "CANDIDATE_LOCATION": "Kenya",
 }
-KEYS = ("LLM_PROVIDER", "LLM_MODEL", "GEMINI_API_KEY", "ANTHROPIC_API_KEY", "CLAUDE_MODEL", "GOOGLE_API_KEY")
+KEYS = ("TZ_NAME", "LLM_PROVIDER", "LLM_MODEL", "GEMINI_API_KEY", "ANTHROPIC_API_KEY", "CLAUDE_MODEL", "GOOGLE_API_KEY")
 
 
 @pytest.fixture
@@ -63,3 +64,16 @@ def test_bad_preferences_yaml_is_a_config_error(tmp_path):
     (tmp_path / "preferences.yaml").write_text("target_roles:\n  - AI engineer: building\n    RAG\n")
     with pytest.raises(ConfigError, match="not valid YAML"):
         load_profile(tmp_path)
+
+
+def test_candidate_location_is_required(env):
+    env.setenv("GEMINI_API_KEY", "g")
+    assert Settings.from_env().candidate_location == "Kenya"
+    env.delenv("CANDIDATE_LOCATION")
+    with pytest.raises(ConfigError, match="CANDIDATE_LOCATION"):
+        Settings.from_env()
+
+
+def test_timezone_defaults_to_utc(env):
+    env.setenv("GEMINI_API_KEY", "g")
+    assert Settings.from_env().timezone == "UTC"

@@ -33,7 +33,7 @@ RESULT_SCHEMA: dict = {
         "employment_type": {"type": "string"},
         "salary": {"type": "string"},
         "location_rules": {"type": "string"},
-        "eligible_from_ethiopia": {"type": "string", "enum": ELIGIBILITY},
+        "eligible": {"type": "string", "enum": ELIGIBILITY},
         "fit_score": {"type": "integer"},
         "fit_reasons": {"type": "array", "items": {"type": "string"}},
         "gaps": {"type": "array", "items": {"type": "string"}},
@@ -51,7 +51,7 @@ RESULT_SCHEMA: dict = {
         "employment_type",
         "salary",
         "location_rules",
-        "eligible_from_ethiopia",
+        "eligible",
         "fit_score",
         "fit_reasons",
         "gaps",
@@ -62,8 +62,8 @@ RESULT_SCHEMA: dict = {
 }
 
 INSTRUCTIONS = """\
-You screen posts from Telegram job channels for one job seeker, who lives in Ethiopia \
-and works remotely. Most posts are in Ukrainian or Russian; some are in English. For each \
+You screen posts from Telegram job channels for one job seeker, who lives in {location} \
+and works remotely. Posts may be in any language. For each \
 post, decide whether it is a job posting, translate the essentials to English, and score \
 how well it fits the candidate's resume and preferences below.
 
@@ -84,15 +84,16 @@ candidate and name the others in summary_en.
 salary figures and currency exactly. Empty when not stated.
 - location_rules: what the post says about where the person must live, which time zone, \
 citizenship, work permits or contract type. Empty when it says nothing.
-- eligible_from_ethiopia:
-  - "yes" only when the post accepts candidates worldwide or explicitly includes Africa \
-or Ethiopia.
-  - "no" when it limits candidates to places that exclude Ethiopia: residents of Ukraine, \
-the EU, the US, a named country or region; a required EU or Ukrainian work permit; a \
-required Ukrainian sole-proprietor registration (ФОП / FOP); relocation or office work in \
-a city.
-  - "unclear" when it only says "remote" or gives no location rule. Many Ukrainian posts \
-mean "remote within Ukraine" without saying so, so do not guess "yes" from "remote" alone.
+- eligible: whether someone living in {location} can take the job.
+  - "yes" only when the post accepts candidates worldwide or explicitly includes \
+{location} or a region that contains it.
+  - "no" when it limits candidates to places that exclude {location}: residents of a named \
+country or region (for example the EU or the US); a required local work permit; a required \
+local business registration (for example the Ukrainian sole-proprietor ФОП / FOP); \
+relocation or office work in a city.
+  - "unclear" when it only says "remote" or gives no location rule. Posts in local job \
+channels often mean "remote within this country" without saying so, so do not guess "yes" \
+from "remote" alone.
 - fit_score: an integer from 0 to 100 for how well this job fits the candidate.
   - 90-100: role, core stack and seniority all match, and nothing in the preferences rules it out.
   - 70-89: strong match with small gaps.
@@ -102,7 +103,7 @@ mean "remote within Ukraine" without saying so, so do not guess "yes" from "remo
   - Anything listed under score_low in the preferences: 50 or lower.
   - Judge the role by what the person will mostly do, not by keywords: a DevOps or data role \
 that mentions Python or Node is still a DevOps or data role.
-  - When eligible_from_ethiopia is "no": 30 or lower, however good the match.
+  - When eligible is "no": 30 or lower, however good the match.
   - When it is "unclear": score the match normally and list the location question in gaps.
 - fit_reasons: two or three short reasons the job fits, tied to the resume.
 - gaps: what the candidate lacks or must check, including location doubts.
@@ -126,10 +127,10 @@ def defuse(text: str) -> str:
     return text.replace("</post>", "</ post>").replace("<post>", "< post>")
 
 
-def build_system(resume: str, preferences: str) -> str:
+def build_system(resume: str, preferences: str, location: str) -> str:
     """Identical for every post, so providers can cache it; only the user turn changes."""
     return (
-        f"{INSTRUCTIONS}\n"
+        f"{INSTRUCTIONS.replace('{location}', location)}\n"
         f"<resume>\n{resume}\n</resume>\n\n"
         f"<preferences>\n{preferences}\n</preferences>"
     )
@@ -151,8 +152,8 @@ def clean_result(data: dict) -> dict:
     except (TypeError, ValueError):
         score = 0
     result["fit_score"] = max(0, min(100, score))
-    if result.get("eligible_from_ethiopia") not in ELIGIBILITY:
-        result["eligible_from_ethiopia"] = "unclear"
+    if result.get("eligible") not in ELIGIBILITY:
+        result["eligible"] = "unclear"
     if result.get("source_language") not in LANGUAGES:
         result["source_language"] = "other"
     if result.get("apply_urgency") not in URGENCY:
@@ -161,7 +162,7 @@ def clean_result(data: dict) -> dict:
     if not result["is_job_posting"]:
         result["fit_score"] = 0
     # Enforce the location cap in code too, not only in the prompt.
-    if result["eligible_from_ethiopia"] == "no":
+    if result["eligible"] == "no":
         result["fit_score"] = min(result["fit_score"], 30)
     for key in ("stack", "fit_reasons", "gaps"):
         if not isinstance(result.get(key), list):
@@ -178,9 +179,9 @@ class Backend(Protocol):
 
 
 class Scorer:
-    def __init__(self, backend: Backend, resume: str, preferences: str):
+    def __init__(self, backend: Backend, resume: str, preferences: str, location: str):
         self.backend = backend
-        self.system = build_system(resume, preferences)
+        self.system = build_system(resume, preferences, location)
 
     async def score(self, post_text: str, channel_title: str) -> dict:
         text = await self.backend.complete(self.system, build_user_message(post_text, channel_title))

@@ -1,5 +1,5 @@
-# No ports and no Caddy site: the watcher only makes outbound connections
-# (Telegram MTProto, api.telegram.org, api.anthropic.com).
+# No ports: the watcher only makes outbound connections
+# (Telegram MTProto, api.telegram.org and the model provider's API).
 name: job-watcher
 
 services:

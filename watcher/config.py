@@ -86,6 +86,7 @@ class Settings:
     folder_name: str
     bot_token: str
     notify_chat_id: int
+    candidate_location: str
     llm_provider: str
     llm_model: str
     llm_effort: str
@@ -116,6 +117,7 @@ class Settings:
             folder_name=os.environ.get("TELEGRAM_FOLDER_NAME", "remote-jobs").strip() or "remote-jobs",
             bot_token=_required("BOT_TOKEN"),
             notify_chat_id=_required_int("NOTIFY_CHAT_ID"),
+            candidate_location=_required("CANDIDATE_LOCATION"),
             llm_provider=provider,
             llm_model=os.environ.get("LLM_MODEL", "").strip() or legacy_model or default_model,
             llm_effort=os.environ.get("CLAUDE_EFFORT", "").strip() or "medium",
@@ -124,7 +126,7 @@ class Settings:
             min_post_chars=_int("MIN_POST_CHARS", 200),
             backfill_per_channel=_int("BACKFILL_PER_CHANNEL", 0),
             folder_refresh_seconds=_int("FOLDER_REFRESH_SECONDS", 900),
-            timezone=os.environ.get("TZ_NAME", "").strip() or "Africa/Addis_Ababa",
+            timezone=os.environ.get("TZ_NAME", "").strip() or "UTC",
             quiet_hours=parse_window(os.environ.get("QUIET_HOURS", "")),
             digest_at=parse_hhmm(digest_raw) if digest_raw else None,
             data_dir=Path(os.environ.get("DATA_DIR", "/data")),

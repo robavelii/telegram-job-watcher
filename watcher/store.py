@@ -178,7 +178,7 @@ class Store:
                     channel,
                     1 if result.get("is_job_posting") else 0,
                     int(result.get("fit_score", 0)),
-                    result.get("eligible_from_ethiopia", "unclear"),
+                    result.get("eligible", "unclear"),
                     json.dumps(result, ensure_ascii=False),
                     self._clock(),
                 ),

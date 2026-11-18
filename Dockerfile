@@ -1,4 +1,4 @@
-# Multi-arch base: builds natively on the OCI Ampere (arm64) host and on x86 laptops.
+# Multi-arch base: builds natively on arm64 and x86-64.
 FROM python:3.12-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

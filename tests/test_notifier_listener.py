@@ -43,9 +43,9 @@ async def test_quiet_hours_hold_then_flush(store, notifier, clock):
 def _seed(store):
     store.record_result(-1, 1, "https://t.me/a/1", "A", result(title="Backend", fit_score=88))
     store.mark_alerted(-1, 1)
-    store.record_result(-1, 2, "https://t.me/a/2", "A", result(title="Near", fit_score=60, eligible_from_ethiopia="unclear"))
+    store.record_result(-1, 2, "https://t.me/a/2", "A", result(title="Near", fit_score=60, eligible="unclear"))
     store.record_result(-1, 3, "https://t.me/a/3", "A",
-                        result(title="EU only", fit_score=30, eligible_from_ethiopia="no", location_rules="Poland residents"))
+                        result(title="EU only", fit_score=30, eligible="no", location_rules="Poland residents"))
     store.record_result(-1, 4, "https://t.me/a/4", "A", result(title="Weak", fit_score=40))
     store.record_result(-1, 6, "https://t.me/a/6", "A", result(is_job_posting=False, fit_score=0, summary_en="A course ad"))
     store.record_error(-1, 5, "https://t.me/a/5", "A", "Gemini API 429: quota")
@@ -63,13 +63,13 @@ def _summary(store):
 def test_summary_lists_every_post_with_a_link(store):
     _seed(store)
     text = _summary(store)
-    assert "Read 10 · scored 5 · job posts 4 · alerts 1 · near misses 1 · closed to Ethiopia 1" in text
+    assert "Read 10 · scored 5 · job posts 4 · alerts 1 · near misses 1 · not open to you 1" in text
     assert "skipped 3 · duplicates 1 · errors 1" in text
     for n in (1, 2, 3, 4, 5, 6, 7, 8):
         assert f'href="https://t.me/a/{n}"' in text, n
     assert 'href="https://t.me/b/9"' in text
     assert text.count('href="https://t.me/a/1"') == 1  # the "seen" re-read is not listed twice
-    for heading in ("Alerts", "Near misses", "Low fit", "Closed to Ethiopia", "Not job posts",
+    for heading in ("Alerts", "Near misses", "Low fit", "Not open to your location", "Not job posts",
                     "Could not score", "Skipped, ads", "Skipped, too short", "Duplicates"):
         assert heading in text, heading
     assert "Poland residents" in text and "A course ad" in text
@@ -79,7 +79,7 @@ def test_summary_lists_every_post_with_a_link(store):
 def test_summary_sections_are_in_order(store):
     _seed(store)
     text = _summary(store)
-    order = ["Alerts", "Near misses", "Low fit", "Closed to Ethiopia", "Not job posts", "Could not score", "Skipped", "Duplicates"]
+    order = ["Alerts", "Near misses", "Low fit", "Not open to your location", "Not job posts", "Could not score", "Skipped", "Duplicates"]
     positions = [text.index(h) for h in order]
     assert positions == sorted(positions)
 
